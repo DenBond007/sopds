@@ -8,12 +8,15 @@ import json
 
 from collections import OrderedDict
 from datetime import datetime, timedelta
+from functools import wraps
+
+from asgiref.sync import sync_to_async
 
 from django.core.management.base import BaseCommand
 from django.conf import settings as main_settings
 from django.utils.html import strip_tags
 from django.db.models import Q, Count, Max
-from django.db import transaction, connection, connections
+from django.db import close_old_connections
 from django.contrib.auth.models import User
 from django.utils.translation import gettext as _
 from django.utils import translation
@@ -25,38 +28,35 @@ from opds_catalog import settings, dl
 from opds_catalog.opds_paginator import Paginator as OPDS_Paginator
 from sopds_web_backend.settings import HALF_PAGES_LINKS
 from constance import config
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import InvalidToken, BadRequest
 
 query_delimiter = "####"
 
 def cmdtrans(func):
-    def wrapper(self, update: Update, context: CallbackContext):
-        translation.activate(config.SOPDS_LANGUAGE)
-        result =  func(self, update, context)
-        translation.deactivate()
-        return result
+    @wraps(func)
+    async def wrapper(self, update: Update, context: CallbackContext):
+        language = await sync_to_async(lambda: config.SOPDS_LANGUAGE)()
+        translation.activate(language)
+        try:
+            return await func(self, update, context)
+        finally:
+            translation.deactivate()
 
     return wrapper
 
 
 def check_auth_decorator(func):
-    def wrapper(self, update: Update, context: CallbackContext):
-        if not config.SOPDS_TELEBOT_AUTH:
-            return func(self, update, context)
-
-        if connection.connection and not connection.is_usable():
-            del(connections._connections.default)
+    @wraps(func)
+    async def wrapper(self, update: Update, context: CallbackContext):
 
         query = update.message if update.message else update.callback_query.message
         username = update.message.from_user.username if update.message else update.callback_query.from_user.username
-        users = User.objects.filter(username__iexact=username)
+        if await sync_to_async(self.is_authorized)(username):
+            return await func(self, update, context)
 
-        if users and users[0].is_active:
-            return func(self, update, context)
-
-        context.bot.sendMessage(chat_id=query.chat_id,
+        await context.bot.send_message(chat_id=query.chat_id,
                         text=_("Hello %s!\nUnfortunately you do not have access to information. Please contact the bot administrator.") % username)
         self.logger.info(_("Denied access for user: %s") % username)
 
@@ -74,6 +74,12 @@ class Command(BaseCommand):
 
     can_import_settings = True
     leave_locale_alone = True
+
+    def is_authorized(self, username):
+        close_old_connections()
+        if not config.SOPDS_TELEBOT_AUTH:
+            return True
+        return User.objects.filter(username__iexact=username, is_active=True).exists()
 
     def add_arguments(self, parser):
         parser.add_argument('command', help='Use [ start | stop | restart ]')
@@ -120,15 +126,14 @@ class Command(BaseCommand):
 
     @cmdtrans
     @check_auth_decorator
-    def startCommand(self, update: Update, context: CallbackContext):
-        context.bot.sendMessage(chat_id=update.message.chat_id, text=_("%(subtitle)s\nHello %(username)s! To search for a book, enter part of her title or author:")%
+    async def startCommand(self, update: Update, context: CallbackContext):
+        await context.bot.send_message(chat_id=update.message.chat_id, text=_("%(subtitle)s\nHello %(username)s! To search for a book, enter part of her title or author:")%
                                                              {'subtitle':settings.SUBTITLE,'username':update.message.from_user.username})
         self.logger.info("Start talking with user: %s"%update.message.from_user)
         return None
 
     def bookFilter(self, query):
-        if connection.connection and not connection.is_usable():
-            del(connections._connections.default)
+        close_old_connections()
         if query in self.query_cache:
             self.query_cache.move_to_end(query)
             timestamp, books = self.query_cache[query]
@@ -144,6 +149,7 @@ class Command(BaseCommand):
             books = books.values("title", "search_title", "authors_set").annotate(doubles=Count("filename"), id=Max("id")).order_by("search_title").distinct()
         else:
             books = books.values("title", "search_title", "authors_set", "id", "docdate").order_by('search_title', '-docdate').distinct()
+        books = list(books)
         self.query_cache[query] = datetime.now(), books
         #self.logger.info("Query '%s' is added to query cache."%query)
         if len(self.query_cache) > self.query_cache_max_size:
@@ -180,7 +186,7 @@ class Command(BaseCommand):
 
     @cmdtrans
     @check_auth_decorator
-    def getBooks(self, update: Update, context: CallbackContext):
+    async def getBooks(self, update: Update, context: CallbackContext):
         query=update.message.text
         self.logger.info("Got message from user %s: %s" % (update.message.from_user.username, query))
 
@@ -189,34 +195,34 @@ class Command(BaseCommand):
         else:
             response = _("I'm searching for the book: %s") % (query)
 
-        context.bot.send_message(chat_id=update.message.chat_id, text=response)
+        await context.bot.send_message(chat_id=update.message.chat_id, text=response)
         self.logger.info("Send message to user %s: %s" % (update.message.from_user.username,response))
 
         if len(query) < 3:
             return None
 
-        books = self.bookFilter(query)
+        books = await sync_to_async(self.bookFilter)(query)
         #books_count = books.count()
         # as I can understand, len de-facto reads all items in memory or QuerySet cache
         books_count = len(books)
 
         if books_count == 0:
             response = _("No results were found for your query, please try again.")
-            context.bot.send_message(chat_id=update.message.chat_id, text=response)
+            await context.bot.send_message(chat_id=update.message.chat_id, text=response)
             self.logger.info("Send message to user %s: %s" % (update.message.from_user.username,response))
             return
 
         response = _("Found %s books.\nI create list, after a few seconds, select the file to download:") % books_count
-        context.bot.send_message(chat_id=update.message.chat_id, text=response)
+        await context.bot.send_message(chat_id=update.message.chat_id, text=response)
         self.logger.info("Send message to user %s: %s" % (update.message.from_user.username, response))
 
-        response = self.bookPager(books, 1, query)
-        context.bot.send_message(chat_id=update.message.chat_id, text=response['message'], parse_mode='HTML', reply_markup=response['buttons'])
+        response = await sync_to_async(self.bookPager)(books, 1, query)
+        await context.bot.send_message(chat_id=update.message.chat_id, text=response['message'], parse_mode='HTML', reply_markup=response['buttons'])
         return None
 
     @cmdtrans
     @check_auth_decorator
-    def getBooksPage(self, update: Update, context: CallbackContext):
+    async def getBooksPage(self, update: Update, context: CallbackContext):
         callback_query = update.callback_query
         (query,page_num) = callback_query.data.split(query_delimiter, maxsplit=1)
         if (page_num == 'current'):
@@ -226,35 +232,20 @@ class Command(BaseCommand):
         except:
             page_num = 1
 
-        books = self.bookFilter(query)
-        response = self.bookPager(books, page_num, query)
+        books = await sync_to_async(self.bookFilter)(query)
+        response = await sync_to_async(self.bookPager)(books, page_num, query)
         try:
-            context.bot.edit_message_text(chat_id=callback_query.message.chat_id, message_id=callback_query.message.message_id, text=response['message'], parse_mode='HTML', reply_markup=response['buttons'])
+            await context.bot.edit_message_text(chat_id=callback_query.message.chat_id, message_id=callback_query.message.message_id, text=response['message'], parse_mode='HTML', reply_markup=response['buttons'])
         except BadRequest:
             pass
         return None
 
-    @cmdtrans
-    @check_auth_decorator
-    def downloadBooks(self, update: Update, context: CallbackContext):
-        book_id_set=re.findall(r'\d+$',update.message.text)
-        if len(book_id_set)==1:
-            try:
-                book_id=int(book_id_set[0])
-                book=Book.objects.get(id=book_id)
-            except:
-                book_id = None
-                book=None
-        else:
-            book_id=None
-            book=None
-
-        if book==None:
-            response = _("The book on the link you specified is not found, try to repeat the book search first.")
-            context.bot.sendMessage(chat_id=update.message.chat_id, text=response, parse_mode='HTML')
-            self.logger.info("Not find download links: %s" % response)
-            return
-
+    def book_download_details(self, book_id):
+        close_old_connections()
+        try:
+            book = Book.objects.get(id=book_id)
+        except Book.DoesNotExist:
+            return None
         authors = ', '.join([a['full_name'] for a in book.authors.values()])
         response = ('<b>%(title)s</b>\n%(author)s\n<b>'+_("Annotation:")+'</b>%(annotation)s\n') % {'title': book.title, 'author': authors, 'annotation':book.annotation}
 
@@ -266,91 +257,104 @@ class Command(BaseCommand):
         if (config.SOPDS_FB2TOMOBI != "") and (book.format == 'fb2'):
             buttons += [InlineKeyboardButton('MOBI', callback_data='/getfilemobi%s'%book_id)]
 
-        markup = InlineKeyboardMarkup([buttons])
-        context.bot.sendMessage(chat_id=update.message.chat_id, text=response, parse_mode='HTML', reply_markup=markup)
-        self.logger.info("Send download buttons.")
-        return None
+        return response, InlineKeyboardMarkup([buttons])
 
     @cmdtrans
     @check_auth_decorator
-    def getBookFile(self, update: Update, context: CallbackContext):
-        callback_query = update.callback_query
-        query = callback_query.data
-        book_id_set=re.findall(r'\d+$',query)
-        if len(book_id_set)==1:
-            try:
-                book_id=int(book_id_set[0])
-                book=Book.objects.get(id=book_id)
-            except:
-                book=None
-        else:
-            book_id=None
-            book=None
-
-        if book==None:
+    async def downloadBooks(self, update: Update, context: CallbackContext):
+        book_id_set = re.findall(r'\d+$', update.message.text)
+        details = None
+        if len(book_id_set) == 1:
+            details = await sync_to_async(self.book_download_details)(int(book_id_set[0]))
+        if details is None:
             response = _("The book on the link you specified is not found, try to repeat the book search first.")
-            context.bot.sendMessage(chat_id=callback_query.message.chat_id, text=response, parse_mode='HTML')
+            await context.bot.send_message(chat_id=update.message.chat_id, text=response, parse_mode='HTML')
             self.logger.info("Not find download links: %s" % response)
-            return
+            return None
+
+        response, markup = details
+        await context.bot.send_message(chat_id=update.message.chat_id, text=response, parse_mode='HTML', reply_markup=markup)
+        self.logger.info("Send download buttons.")
+        return None
+
+    def prepare_book_file(self, query, book_id):
+        close_old_connections()
+        try:
+            book = Book.objects.get(id=book_id)
+        except Book.DoesNotExist:
+            return None
 
         filename = dl.getFileName(book)
         document = None
-
-        if re.match(r'/getfileorig',query):
+        if re.match(r'/getfileorig', query):
             document = dl.getFileData(book)
-
-        if re.match(r'/getfilezip',query):
+        elif re.match(r'/getfilezip', query):
             document = dl.getFileDataZip(book)
-            filename = filename + '.zip'
-
-        if re.match(r'/getfileepub',query):
+            filename += '.zip'
+        elif re.match(r'/getfileepub', query):
             document = dl.getFileDataEpub(book)
             filename = filename.replace('.fb2', '.epub')
-
-        if re.match(r'/getfilemobi',query):
+        elif re.match(r'/getfilemobi', query):
             document = dl.getFileDataMobi(book)
             filename = filename.replace('.fb2', '.mobi')
+        return document, filename
 
+    @cmdtrans
+    @check_auth_decorator
+    async def getBookFile(self, update: Update, context: CallbackContext):
+        callback_query = update.callback_query
+        query = callback_query.data
+        book_id_set = re.findall(r'\d+$', query)
+        file_data = None
+        if len(book_id_set) == 1:
+            file_data = await sync_to_async(self.prepare_book_file)(query, int(book_id_set[0]))
+
+        if file_data is None:
+            response = _("The book on the link you specified is not found, try to repeat the book search first.")
+            await context.bot.send_message(chat_id=callback_query.message.chat_id, text=response, parse_mode='HTML')
+            self.logger.info("Not find download links: %s" % response)
+            return None
+
+        document, filename = file_data
         if document:
-            context.bot.send_document(chat_id=callback_query.message.chat_id,document=document,filename=filename)
-            document.close()
+            try:
+                await context.bot.send_document(chat_id=callback_query.message.chat_id, document=document, filename=filename)
+            finally:
+                document.close()
             self.logger.info("Send file: %s" % filename)
         else:
             response = _("There was a technical error, please contact the Bot administrator.")
-            context.bot.sendMessage(chat_id=callback_query.message.chat_id, text=response, parse_mode='HTML')
+            await context.bot.send_message(chat_id=callback_query.message.chat_id, text=response, parse_mode='HTML')
             self.logger.info("Book get error: %s" % response)
 
         return None
 
     @cmdtrans
     @check_auth_decorator
-    def botCallback(self, update: Update, context: CallbackContext):
+    async def botCallback(self, update: Update, context: CallbackContext):
         query = update.callback_query
 
         if re.match(r'/getfile', query.data):
-            return self.getBookFile(update, context)
+            return await self.getBookFile(update, context)
         else:
-            return self.getBooksPage(update, context)
+            return await self.getBooksPage(update, context)
 
     def start(self):
         writepid(self.pidfile)
         quit_command = 'CTRL-BREAK' if sys.platform == 'win32' else 'CONTROL-C'
         self.stdout.write("Quit the sopds_telebot with %s.\n"%quit_command)
         try:
-            updater = Updater(token=config.SOPDS_TELEBOT_API_TOKEN)
+            application = ApplicationBuilder().token(config.SOPDS_TELEBOT_API_TOKEN).build()
             start_command_handler = CommandHandler('start', self.startCommand)
-            get_book_handler = MessageHandler(Filters.text, self.getBooks)
-	    #fix deprecated RegexHandler See https://git.io/fxJuV for more info
-            download_handler = MessageHandler(Filters.regex('^/download\d+$'),self.downloadBooks)
+            get_book_handler = MessageHandler(filters.TEXT, self.getBooks)
+            download_handler = MessageHandler(filters.Regex(r'^/download\d+$'), self.downloadBooks)
 
-            updater.dispatcher.add_handler(start_command_handler)
-	    #change order of handlers, to handle download(regexp) before common text(book name)
-            updater.dispatcher.add_handler(download_handler)
-            updater.dispatcher.add_handler(get_book_handler)
-            updater.dispatcher.add_handler(CallbackQueryHandler(self.botCallback))
+            application.add_handler(start_command_handler)
+            application.add_handler(download_handler)
+            application.add_handler(get_book_handler)
+            application.add_handler(CallbackQueryHandler(self.botCallback))
 
-            updater.start_polling(drop_pending_updates=True)
-            updater.idle()
+            application.run_polling(drop_pending_updates=True)
         except InvalidToken:
             self.stdout.write('Invalid telegram token.\nSet correct token for telegram API by command:\n python3 manage.py sopds_util setconf SOPDS_TELEBOT_API_TOKEN "<token>"')
             self.logger.error('Invalid telegram token.')

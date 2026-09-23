@@ -227,3 +227,17 @@ M02.6a: python-telegram-bot 22.8 добавлен в `pyproject.toml`, `uv lock`
 разрыв API v13, подзадача M02.6b. Бот не запускался. Логи:
 `.local/logs/m02-telegram-lock.log`, `m02-telegram-sync.log`,
 `m02-telegram-help-after-dep.log`, `m02-telegram-check.log`.
+
+M02.6b: команда переведена на `ApplicationBuilder`, `filters` и async callbacks;
+синхронные обращения к Constance/ORM и подготовка файла выполняются через
+`sync_to_async`, кеш поиска содержит вычисленные списки, файл закрывается после
+отправки. `manage.py help sopds_telebot` прошёл без токена и сети. Четыре
+адресных теста на одноразовой БД и временном файле прошли (exit 0): поиск,
+сохранение ID в кнопке загрузки, закрытие файла и проверка доступа. Первый
+прогон тестов выявил несовместимость `close_old_connections` с транзакцией
+`TestCase`; изолированные Telegram-тесты переведены на `TransactionTestCase`
+и прошли повторно. Общий набор: 57 тестов, exit 1, 4 прежних падения по
+`Book.lang`, 0 ошибок, замечаний Django нет. После тестов test-БД отсутствует.
+Живой Telegram-бот и доставка сообщений по сети не проверялись. Логи:
+`.local/logs/m02-telegram-help-ported.log`, `m02-telegram-tests-final.log`,
+`m02-telegram-full.log`.
