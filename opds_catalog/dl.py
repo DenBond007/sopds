@@ -115,8 +115,9 @@ def getFileDataConv(book, convert_type):
     fw.close()
     fo.close()
 
-    popen_args = ("\"%s\" \"%s\" \"%s\"" % (converter_path, tmp_fb2_path, tmp_conv_path))
-    proc = subprocess.Popen(popen_args, shell=True, stdout=subprocess.PIPE)
+    proc = subprocess.Popen(
+        [converter_path, tmp_fb2_path, tmp_conv_path], stdout=subprocess.PIPE
+    )
     # У следующий строки 2 функции 1-получение информации по конвертации и 2- ожидание конца конвертации
     # В силу 2й функции ее удаление приведет к ошибке выдачи сконвертированного файла
     out = proc.stdout.readlines()
@@ -492,9 +493,9 @@ def ConvertFB2(request, book_id, convert_type):
         file_path=tmp_fb2_path        
         
     tmp_conv_path=os.path.join(config.SOPDS_TEMP_DIR,dlfilename)
-    popen_args = ("\"%s\" \"%s\" \"%s\""%(converter_path,file_path,tmp_conv_path))
-    proc = subprocess.Popen(popen_args, shell=True, stdout=subprocess.PIPE)
-    #proc = subprocess.Popen((converter_path.encode('utf8'),file_path.encode('utf8'),tmp_conv_path.encode('utf8')), shell=True, stdout=subprocess.PIPE)
+    proc = subprocess.Popen(
+        [converter_path, file_path, tmp_conv_path], stdout=subprocess.PIPE
+    )
     out = proc.stdout.readlines()
 
     if os.path.isfile(tmp_conv_path):

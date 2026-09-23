@@ -137,3 +137,10 @@ M01.3a: шесть OPDS/web запросов переведены на пара�
 с удалённого `{% load staticfiles %}` на `{% load static %}`. Логи:
 `.local/logs/m01-sql-before.log`, `m01-sql-after.log`, `m01-sql-all.log`,
 `m01-sql-web-2.log`.
+
+M01.3b: до исправления буквальное имя тестового конвертера с `$(...)` расширялось
+оболочкой (`1 тест, 1 падение`, exit 1). Оба пути `Popen` переведены на список
+аргументов без shell. После исправления тест прямой конвертации и тест HTTP-пути
+прошли (`2/2`, exit 0), работая только с временными тестовыми файлами. Логи:
+`.local/logs/m01-converter-before.log`, `m01-converter-after.log`,
+`m01-converter-both.log`.
