@@ -99,56 +99,35 @@ def getFileDataZip(book):
     return dio
 
 def getFileDataConv(book, convert_type):
-
     if book.format != 'fb2':
-       return None
-
-    fo = getFileData(book)
-
-    if not fo:
         return None
-
-    transname = getFileName(book)
-
-    (n, e) = os.path.splitext(transname)
-    dlfilename = "%s.%s" % (n, convert_type)
-
     if convert_type == 'epub':
         converter_path = config.SOPDS_FB2TOEPUB
     elif convert_type == 'mobi':
         converter_path = config.SOPDS_FB2TOMOBI
     else:
-        fo.close()
         return None
 
-    tmp_fb2_path = os.path.join(config.SOPDS_TEMP_DIR, book.filename)
-    tmp_conv_path = os.path.join(config.SOPDS_TEMP_DIR, dlfilename)
-    fw = open(tmp_fb2_path,'wb')
-    fw.write(fo.read())
-    fw.close()
-    fo.close()
-
-    proc = subprocess.Popen(
-        [converter_path, tmp_fb2_path, tmp_conv_path], stdout=subprocess.PIPE
-    )
-    # У следующий строки 2 функции 1-получение информации по конвертации и 2- ожидание конца конвертации
-    # В силу 2й функции ее удаление приведет к ошибке выдачи сконвертированного файла
-    out = proc.stdout.readlines()
-
-    if os.path.isfile(tmp_conv_path):
-        fo = codecs.open(tmp_conv_path, "rb")
-    else:
+    book_data = getFileData(book)
+    if not book_data:
         return None
 
-    dio = io.BytesIO()
-    dio.write(fo.read())
-    dio.seek(0)
+    with book_data, tempfile.TemporaryDirectory(
+        prefix='sopds-convert-', dir=config.SOPDS_TEMP_DIR
+    ) as workdir:
+        source_path = os.path.join(workdir, 'source.fb2')
+        output_path = os.path.join(workdir, 'output.' + convert_type)
+        with open(source_path, 'wb') as source_file:
+            source_file.write(book_data.read())
+        proc = subprocess.Popen(
+            [converter_path, source_path, output_path], stdout=subprocess.PIPE
+        )
+        proc.communicate()
+        if not os.path.isfile(output_path):
+            return None
+        with open(output_path, 'rb') as output_file:
+            return io.BytesIO(output_file.read())
 
-    fo.close()
-    os.remove(tmp_fb2_path)
-    os.remove(tmp_conv_path)
-
-    return dio
 
 def getFileDataEpub(book):
     return getFileDataConv(book,'epub')
@@ -436,72 +415,29 @@ def Thumbnail(request, book_id):
 def ConvertFB2(request, book_id, convert_type):
     """ Выдача файла книги после конвертации в EPUB или mobi """
     book = Book.objects.get(id=book_id)
-    
-    if book.format!='fb2':
+    if book.format != 'fb2':
         raise Http404
 
     if config.SOPDS_AUTH and request.user.is_authenticated:
         bookshelf.objects.get_or_create(user=request.user, book=book)
 
-    full_path = resolve_book_source_path(book)
-            
     if config.SOPDS_TITLE_AS_FILENAME:
-        transname=utils.translit(book.title+'.'+book.format).replace("/","_")
+        transname = utils.translit(book.title + '.' + book.format).replace('/', '_')
     else:
-        transname=utils.translit(book.filename)      
-        
+        transname = utils.translit(book.filename)
     transname = utils.to_ascii(transname)
-      
-    (n,e)=os.path.splitext(transname)
-    dlfilename="%s.%s"%(n,convert_type)
-    
-    if convert_type=='epub':
-        converter_path=config.SOPDS_FB2TOEPUB
-    elif convert_type=='mobi':
-        converter_path=config.SOPDS_FB2TOMOBI
-    content_type=mime_detector.fmt(convert_type)
+    name, _ = os.path.splitext(transname)
+    dlfilename = '%s.%s' % (name, convert_type)
 
-    if book.cat_type==opdsdb.CAT_NORMAL:
-        tmp_fb2_path=None
-        file_path = full_path
-    elif book.cat_type in [opdsdb.CAT_ZIP, opdsdb.CAT_INP]:
-        try:
-            fz=codecs.open(full_path, "rb")
-        except FileNotFoundError:
-            raise Http404        
-        z = zipfile.ZipFile(fz, 'r', allowZip64=True)
-        z.extract(book.filename,config.SOPDS_TEMP_DIR)
-        tmp_fb2_path=os.path.join(config.SOPDS_TEMP_DIR,book.filename)
-        file_path=tmp_fb2_path        
-        
-    tmp_conv_path=os.path.join(config.SOPDS_TEMP_DIR,dlfilename)
-    proc = subprocess.Popen(
-        [converter_path, file_path, tmp_conv_path], stdout=subprocess.PIPE
-    )
-    out = proc.stdout.readlines()
-
-    if os.path.isfile(tmp_conv_path):
-        fo=codecs.open(tmp_conv_path, "rb")
-        s=fo.read()
-        # HTTP Header
-        response = HttpResponse()
-        response["Content-Type"]='%s; name="%s"'%(content_type,dlfilename)
-        response["Content-Disposition"] = 'attachment; filename="%s"'%(dlfilename)
-        response["Content-Transfer-Encoding"]='binary'    
-        response["Content-Length"] = str(len(s))
-        response.write(s)         
-        fo.close()
-    else:
+    converted = getFileDataConv(book, convert_type)
+    if converted is None:
         raise Http404
+    with converted:
+        data = converted.read()
 
-    try: 
-        if tmp_fb2_path:
-            os.remove(tmp_fb2_path)
-    except: 
-        pass
-    try: 
-        os.remove(tmp_conv_path)
-    except: 
-        pass
-
+    response = HttpResponse(data)
+    response['Content-Type'] = '%s; name="%s"' % (mime_detector.fmt(convert_type), dlfilename)
+    response['Content-Disposition'] = 'attachment; filename="%s"' % dlfilename
+    response['Content-Transfer-Encoding'] = 'binary'
+    response['Content-Length'] = str(len(data))
     return response
