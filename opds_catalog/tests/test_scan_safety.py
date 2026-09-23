@@ -46,6 +46,7 @@ class ScanDataSafetyTests(TestCase):
             book = Book.objects.get(filename=fixture.name)
             book_id = book.pk
             catalog_id = book.catalog_id
+            first_scan_id = book.last_seen_scan_id
             user = User.objects.create_user('repeat_scan', password='test-password')
             shelf = bookshelf.objects.create(user=user, book=book)
 
@@ -58,6 +59,9 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book_id)
         self.assertEqual(scanner.books_skipped, 1)
         self.assertEqual(scanner.books_updated, 0)
+        self.assertIsNotNone(first_scan_id)
+        self.assertEqual(Book.objects.get(pk=book_id).last_seen_scan_id, scanner.scan_id)
+        self.assertNotEqual(first_scan_id, scanner.scan_id)
 
     def test_logical_delete_setting_preserves_missing_book_and_shelf(self):
         fixture = Path(__file__).parent / 'data' / '262001.fb2'
@@ -261,6 +265,7 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(book.title, 'The Sanctuary Panther')
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
         self.assertEqual(scanner.arch_skipped, 1)
+        self.assertEqual(book.last_seen_scan_id, scanner.scan_id)
 
     def test_same_size_changed_inpx_is_not_skipped(self):
         def inp_line(title, author, genre, series):
@@ -307,6 +312,7 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(Book.objects.count(), 1)
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
         self.assertEqual(scanner.books_updated, 0)
+        self.assertEqual(book.last_seen_scan_id, scanner.scan_id)
 
     def test_corrupt_changed_zip_keeps_existing_book_and_shelf(self):
         source = Path(__file__).parent / 'data' / '262001.fb2'
@@ -367,6 +373,31 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(scanner.bad_archives, 1)
         self.assertEqual(scanner.books_updated, 0)
 
+    def test_skipped_zip_does_not_revive_removed_shelved_book(self):
+        source = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            target = Path(root, 'books.zip')
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_ZIPSCAN = True
+            with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED) as archive:
+                archive.writestr(source.name, source.read_bytes())
+                archive.writestr('removed.fb2', source.read_bytes())
+            opdsScanner().scan_all()
+            removed = Book.objects.get(filename='removed.fb2')
+            user = User.objects.create_user('removed_from_zip', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=removed)
+
+            with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED) as archive:
+                archive.writestr(source.name, source.read_bytes())
+            opdsScanner().scan_all()
+            self.assertEqual(Book.objects.get(pk=removed.pk).avail, 0)
+            scanner = opdsScanner()
+            scanner.scan_all()
+
+        self.assertEqual(Book.objects.get(pk=removed.pk).avail, 0)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, removed.pk)
+        self.assertEqual(scanner.arch_skipped, 1)
+
     def test_corrupt_changed_inpx_keeps_existing_book_and_shelf(self):
         fields = ['Doe, Jane', 'fantasy', 'Old Name', '', '', '123', '100',
                   'id', '', 'fb2', '2020-01-01', 'en']
@@ -400,7 +431,7 @@ class ScanDataSafetyTests(TestCase):
 
 
 class ScannerConcurrencyTests(TransactionTestCase):
-    def test_interrupted_scan_rolls_back_partial_changes_and_deletions(self):
+    def test_interrupted_scan_keeps_old_books_until_successful_retry(self):
         source = Path(__file__).parent / 'data' / '262001.fb2'
         with TemporaryDirectory() as root:
             config.SOPDS_ROOT_LIB = root
@@ -426,10 +457,18 @@ class ScannerConcurrencyTests(TransactionTestCase):
                 with self.assertRaises(RuntimeError):
                     command.scan()
 
+            book.refresh_from_db()
+            new_book = Book.objects.get(filename='new.fb2')
+            self.assertEqual(book.avail, 2)
+            self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+            self.assertFalse(command.scan_is_active)
+
+            command.scan()
+
         book.refresh_from_db()
-        self.assertEqual(book.avail, 2)
-        self.assertEqual(Book.objects.count(), 1)
-        self.assertFalse(Book.objects.filter(filename='new.fb2').exists())
+        self.assertEqual(book.avail, 0)
+        self.assertEqual(Book.objects.count(), 2)
+        self.assertEqual(Book.objects.get(filename='new.fb2').pk, new_book.pk)
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
         self.assertFalse(command.scan_is_active)
 

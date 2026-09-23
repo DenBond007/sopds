@@ -3,7 +3,6 @@
 import os
 import re
 
-from django.db.models import Q
 from django.utils.translation import gettext as _ , gettext_noop as _noop
 from django.db import transaction, connection
 
@@ -95,23 +94,28 @@ def getlangcode(s):
     
     return langcode
     
-def avail_check_prepare():
-    Book.objects.filter(~Q(avail=0)).update(avail=1)
-
-def books_del_logical():
-    row_count = Book.objects.filter(avail=1).update(avail=0)
+def books_del_logical(scan_id):
+    row_count = Book.objects.exclude(last_seen_scan_id=scan_id).exclude(avail=0).update(avail=0)
     return row_count
 
-def books_del_phisical():
+def books_del_phisical(scan_id):
     # A shelved book must retain its ID and user relationship when its file disappears.
     shelved_ids = bookshelf.objects.values("book_id")
-    Book.objects.filter(avail__lte=1, pk__in=shelved_ids).update(avail=0)
-    deleted_count, _ = Book.objects.filter(avail__lte=1).exclude(
+    missing = Book.objects.exclude(last_seen_scan_id=scan_id)
+    missing.filter(pk__in=shelved_ids).update(avail=0)
+    deleted_count, _ = missing.exclude(
         pk__in=shelved_ids
     ).delete()
     return deleted_count
 
-def arc_skip(arcpath,arcsize,source_mtime_ns):
+
+def mark_books_present(queryset, scan_id):
+    updates = {'avail': 2}
+    if scan_id is not None:
+        updates['last_seen_scan_id'] = scan_id
+    return queryset.filter(avail__gt=0).update(**updates)
+
+def arc_skip(arcpath,arcsize,source_mtime_ns,scan_id=None):
     """
        Выясняем изменялся ли архив (ZIP или INP-файл)
        если нет, то пытаемся пропустить сканирование, устанавливая для всех книг из
@@ -131,7 +135,7 @@ def arc_skip(arcpath,arcsize,source_mtime_ns):
     # Поэтому делаем update всех книг из этого архива, однако если ни одного изменения не произошло, то
     # таких книг нет, поэтому видимо нужно пересканировать архив
     if arcsize == catalog.cat_size and source_mtime_ns == catalog.source_mtime_ns:
-        row_count = Book.objects.filter(path=arcpath).update(avail=2)
+        row_count = mark_books_present(Book.objects.filter(path=arcpath), scan_id)
         return row_count 
     
     # Здесь мы оказываемся если размеры архива в БД и в наличии разные, поэтому считаем что изменения в архиве есть 
@@ -167,7 +171,7 @@ def inp_skip(arcpath,arcsize):
     return 0
 
 
-def inpx_skip(arcpath, arcsize, source_mtime_ns):
+def inpx_skip(arcpath, arcsize, source_mtime_ns, scan_id=None):
     """
        Выясняем изменялся ли INPX-файл)
        если нет, то пытаемся пропустить сканирование, устанавливая для всех книг из
@@ -187,7 +191,7 @@ def inpx_skip(arcpath, arcsize, source_mtime_ns):
     # Поэтому делаем update всех книг из этого INPX, однако если ни одного изменения не произошло, то
     # таких книг нет, поэтому видимо нужно пересканировать архив
     if arcsize == catalog.cat_size and source_mtime_ns == catalog.source_mtime_ns:
-        row_count = Book.objects.filter(catalog__parent__parent=catalog).update(avail=2)
+        row_count = mark_books_present(Book.objects.filter(catalog__parent__parent=catalog), scan_id)
         return row_count
 
         # Здесь мы оказываемся если размеры INPX в БД и в наличии разные, поэтому считаем что изменения в архиве есть
@@ -215,7 +219,7 @@ def addcattree(cat_name, archive=0, size = 0):
 
     return new_cat
 
-def findbook(name, path, setavail=0):
+def findbook(name, path, setavail=0, scan_id=None):
     # Здесь специально не делается проверка avail, т.к. если удаление было логическим,
     # а книга была восстановлена в своем старом месте
     # то произойдет восстановление записи об этой книги а не добавится новая
@@ -224,21 +228,27 @@ def findbook(name, path, setavail=0):
     except Book.DoesNotExist:
         book = None
 
-    if book and setavail:
-        book.avail=2
-        book.save()
+    if book and (setavail or scan_id is not None):
+        update_fields = []
+        if setavail:
+            book.avail=2
+            update_fields.append('avail')
+        if scan_id is not None:
+            book.last_seen_scan_id=scan_id
+            update_fields.append('last_seen_scan_id')
+        book.save(update_fields=update_fields)
 
     return book
 
-def addbook(name, path, cat, exten, title, annotation, docdate, lang, size=0, archive=0, source_mtime_ns=None):
+def addbook(name, path, cat, exten, title, annotation, docdate, lang, size=0, archive=0, source_mtime_ns=None, scan_id=None):
     book = Book.objects.create(filename=name[:SIZE_BOOK_FILENAME],path=path[:SIZE_BOOK_PATH],catalog=cat,filesize=size,format=exten.lower()[:SIZE_BOOK_FORMAT],
                 title=title[:SIZE_BOOK_TITLE],search_title=title.upper()[:SIZE_BOOK_TITLE],annotation=p(annotation,SIZE_BOOK_ANNOTATION),
                 docdate=docdate[:SIZE_BOOK_DOCDATE],lang=lang[:SIZE_BOOK_LANG],cat_type=archive,avail=2, lang_code=getlangcode(title),
-                source_mtime_ns=source_mtime_ns)
+                source_mtime_ns=source_mtime_ns,last_seen_scan_id=scan_id)
     return book
 
 
-def updatebook(book, cat, exten, title, annotation, docdate, lang, size, archive, source_mtime_ns=None):
+def updatebook(book, cat, exten, title, annotation, docdate, lang, size, archive, source_mtime_ns=None, scan_id=None):
     book.catalog = cat
     book.filesize = size
     book.format = exten.lower()[:SIZE_BOOK_FORMAT]
@@ -251,9 +261,12 @@ def updatebook(book, cat, exten, title, annotation, docdate, lang, size, archive
     book.cat_type = archive
     book.avail = 2
     book.source_mtime_ns = source_mtime_ns
+    if scan_id is not None:
+        book.last_seen_scan_id = scan_id
     book.save(update_fields=[
         'catalog', 'filesize', 'format', 'title', 'search_title', 'annotation',
         'docdate', 'lang', 'lang_code', 'cat_type', 'avail', 'source_mtime_ns',
+        'last_seen_scan_id',
     ])
     return book
 

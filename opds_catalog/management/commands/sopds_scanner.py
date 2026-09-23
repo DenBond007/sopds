@@ -7,7 +7,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 
 from django.core.management.base import BaseCommand
-from django.db import transaction, connection
+from django.db import connection
 from django.conf import settings as main_settings
 
 from opds_catalog.models import Counter
@@ -85,8 +85,7 @@ class Command(BaseCommand):
                 return
 
             scanner = opdsScanner(self.logger)
-            with transaction.atomic():
-                scanner.scan_all()
+            scanner.scan_all()
             Counter.objects.update_known_counters()
         finally:
             try:

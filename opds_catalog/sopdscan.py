@@ -7,6 +7,7 @@ import logging
 import re
 import json
 import zipfile as standard_zipfile
+import uuid
 
 from book_tools.format import create_bookfile
 from book_tools.format.util import strip_symbols
@@ -27,6 +28,7 @@ class opdsScanner:
     def __init__(self, logger=None):
         self.fb2parser=None
         self.force_inp_rescan = False
+        self.scan_id = None
         self.init_parser()
         
         self.fullang = None
@@ -103,6 +105,7 @@ class opdsScanner:
 
     def scan_all(self):
         self.init_stats()
+        self.scan_id = uuid.uuid4()
         self.log_options()
         self.inp_cat = None
         self.zip_file = None
@@ -116,8 +119,6 @@ class opdsScanner:
         def fail_on_walk_error(error):
             raise error
 
-        opdsdb.avail_check_prepare()
-            
         for full_path, dirs, files in os.walk(root, followlinks=True, onerror=fail_on_walk_error):
             # Если разрешена обработка inpx, то при нахождении inpx обрабатываем его и прекращаем обработку текущего каталога
             if config.SOPDS_INPX_ENABLE:
@@ -139,10 +140,11 @@ class opdsScanner:
                     file_size=os.path.getsize(file)
                     self.processfile(name,full_path,file,None,0,file_size)                   
 
-        if config.SOPDS_DELETE_LOGICAL:
-            self.books_deleted = opdsdb.books_del_logical()
-        else:
-            self.books_deleted = opdsdb.books_del_phisical()
+        with transaction.atomic():
+            if config.SOPDS_DELETE_LOGICAL:
+                self.books_deleted = opdsdb.books_del_logical(self.scan_id)
+            else:
+                self.books_deleted = opdsdb.books_del_phisical(self.scan_id)
 
         self.log_stats()
 
@@ -185,12 +187,12 @@ class opdsScanner:
 
         rel_path_current = os.path.join(self.rel_path,meta_data[inpx_parser.sFolder])
 
-        existing = opdsdb.findbook(name, rel_path_current, 1)
+        existing = opdsdb.findbook(name, rel_path_current, 1, self.scan_id)
         cat = opdsdb.addcattree(rel_path_current, opdsdb.CAT_INP)
         if existing is None:
-            book=opdsdb.addbook(name,rel_path_current,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP)
+            book=opdsdb.addbook(name,rel_path_current,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP,scan_id=self.scan_id)
         else:
-            book=opdsdb.updatebook(existing,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP)
+            book=opdsdb.updatebook(existing,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP,scan_id=self.scan_id)
             book.authors.clear()
             book.genres.clear()
             book.series.clear()
@@ -217,7 +219,7 @@ class opdsScanner:
         rel_file=os.path.relpath(file,config.SOPDS_ROOT_LIB)
         inpx_stat = os.stat(file)
         inpx_size = inpx_stat.st_size
-        if config.SOPDS_INPX_SKIP_UNCHANGED and opdsdb.inpx_skip(rel_file,inpx_size,inpx_stat.st_mtime_ns):
+        if config.SOPDS_INPX_SKIP_UNCHANGED and opdsdb.inpx_skip(rel_file,inpx_size,inpx_stat.st_mtime_ns,self.scan_id):
             self.logger.info('Skip INPX file = '+file+'. Not changed.')
         else:    
             self.logger.info('Start process INPX file = '+file)
@@ -235,7 +237,7 @@ class opdsScanner:
                     cat.save(update_fields=['cat_size', 'source_mtime_ns'])
             except (standard_zipfile.BadZipFile, UnicodeDecodeError, ValueError) as err:
                 self.books_added, self.books_updated, self.books_in_archives = initial_counts
-                opdsdb.Book.objects.filter(catalog__parent__parent__path=rel_file, avail=1).update(avail=2)
+                opdsdb.mark_books_present(opdsdb.Book.objects.filter(catalog__parent__parent__path=rel_file), self.scan_id)
                 self.bad_archives+=1
                 self.logger.warning('Error while reading INPX '+file+'; previous books kept. (Error: %s)' % err)
             finally:
@@ -245,7 +247,7 @@ class opdsScanner:
         rel_file=os.path.relpath(file,config.SOPDS_ROOT_LIB)
         archive_stat = os.stat(file)
         zsize = archive_stat.st_size
-        if opdsdb.arc_skip(rel_file,zsize,archive_stat.st_mtime_ns):
+        if opdsdb.arc_skip(rel_file,zsize,archive_stat.st_mtime_ns,self.scan_id):
             self.arch_skipped+=1
             self.logger.debug('Skip ZIP archive '+rel_file+'. Already scanned.')
         else:                   
@@ -267,7 +269,7 @@ class opdsScanner:
                 self.arch_scanned+=1
             except (zipfile.BadZipFile, ArchiveScanError) as err:
                 self.books_added, self.books_updated, self.books_in_archives = initial_counts
-                opdsdb.Book.objects.filter(path=rel_file, avail=1).update(avail=2)
+                opdsdb.mark_books_present(opdsdb.Book.objects.filter(path=rel_file), self.scan_id)
                 self.bad_archives+=1
                 self.logger.warning('Error while reading ZIP archive '+file+'; previous books kept. (Error: %s)' % err)
 
@@ -281,7 +283,7 @@ class opdsScanner:
                     os.stat(file).st_mtime_ns
                     if archive == 0 and isinstance(file, (str, os.PathLike)) else None
                 )
-                existing = opdsdb.findbook(name, rel_path, 1)
+                existing = opdsdb.findbook(name, rel_path, 1, self.scan_id)
                 changed = (
                     existing is None or archive != 0 or existing.filesize != file_size
                     or existing.source_mtime_ns != source_mtime_ns
@@ -310,9 +312,9 @@ class opdsScanner:
 
                         with transaction.atomic():
                             if existing is None:
-                                book=opdsdb.addbook(name,rel_path,cat,e[1:],title,annotation,docdate,lang,file_size,archive,source_mtime_ns)
+                                book=opdsdb.addbook(name,rel_path,cat,e[1:],title,annotation,docdate,lang,file_size,archive,source_mtime_ns,self.scan_id)
                             else:
-                                book=opdsdb.updatebook(existing,cat,e[1:],title,annotation,docdate,lang,file_size,archive,source_mtime_ns)
+                                book=opdsdb.updatebook(existing,cat,e[1:],title,annotation,docdate,lang,file_size,archive,source_mtime_ns,self.scan_id)
                                 book.authors.clear()
                                 book.genres.clear()
                                 book.series.clear()
