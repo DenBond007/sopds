@@ -466,3 +466,14 @@ HTTP 404. Скачивание книги не ограничено этим п�
 exit 0, замечаний Django нет; test-БД удалена. Логи:
 `.local/logs/m04-cover-size-before.log`, `m04-cover-size-targeted-final.log`,
 `m04-cover-size-general.log`.
+
+M04.8c: реальные обычная и ZIP FB2 до исправления обе падали с
+`FileNotFoundError` на `/sopds/convert/fb2_to_html.py` (2 ошибки, exit 1).
+ViewHtml теперь вызывает скрипт из checkout через текущий Python, копирует
+источник порциями во временный каталог `SOPDS_TEMP_DIR`, очищает его после
+успеха и тайм-аута, ограничивает процесс 300 с. Оба формата вернули HTML с
+названием книги; тест тайм-аута проверил HTTP 404 и очистку каталога.
+Адресные 3/3 и общие 98/98 тестов прошли, exit 0, замечаний Django нет;
+test-БД удалена. HTML-ответ по-прежнему собирается в памяти. Логи:
+`.local/logs/m04-html-before.log`, `m04-html-targeted-final.log`,
+`m04-html-general.log`.

@@ -7,6 +7,7 @@ import io
 import subprocess
 import tempfile
 import signal
+import sys
 import zipfile as standard_zipfile
 from contextlib import closing
 from pathlib import Path
@@ -267,46 +268,46 @@ def get_book_content(book):
         except FileNotFoundError:                                                                                                      
             raise Http404
 
-def ViewHtml(request, book_id):                                                                                                        
-    book = Book.objects.get(id=book_id)                                                                                                
-                                                                                                                                       
-    if book.format.lower() != "fb2":                                                                                                   
-        raise Http404                                                                                                                  
-                                                                                                                                       
-    # FB2-Inhalt laden                                                                                                                 
-    fb2_data = get_book_content(book)                                                                                                  
-                                                                                                                                       
-    fb2_file = None                                                                                                                    
-    html_file = None                                                                                                                   
-                                                                                                                                       
-    try:                                                                                                                               
-        # tempor..re FB2-Datei                                                                                                         
-        fb2_file = tempfile.NamedTemporaryFile(                                                                                        
-            suffix=".fb2",                                                                                                             
-            delete=False                                                                                                               
-        )                                                                                                                              
-        fb2_file.write(fb2_data)                                                                                                       
-        fb2_file.close()                                                                                                               
-                                                                                                                                       
-        # tempor..re HTML-Datei                                                                                                        
-        html_file = tempfile.NamedTemporaryFile(                                                                                       
-            suffix=".html",                                                                                                            
-            delete=False                                                                                                               
-        )                                                                                                                              
-        html_file.close()
-        # Konverter aufrufen                                                                                                           
-        subprocess.run(                                                                                                                
-            [                                                                                                                          
-                "/sopds/convert/fb2_to_html.py",                                                                                       
-                fb2_file.name,                                                                                                         
-                "-o",                                                                                                                  
-                html_file.name                                                                                                         
-            ],                                                                                                                         
-            check=True                                                                                                                 
-        )                                                                                                                              
-                                                                                                                                       
-        with open(html_file.name, "r", encoding="utf-8") as f:                                                                         
-            html = f.read()
+def ViewHtml(request, book_id):
+    book = Book.objects.get(id=book_id)
+    if book.format.lower() != "fb2":
+        raise Http404
+    source_path = resolve_book_source_path(book)
+    member_name = None if book.cat_type == opdsdb.CAT_NORMAL else book.filename
+    converter_path = Path(__file__).resolve().parent.parent / 'convert' / 'fb2_to_html.py'
+
+    with tempfile.TemporaryDirectory(
+        prefix='sopds-html-', dir=config.SOPDS_TEMP_DIR
+    ) as workdir:
+        fb2_path = Path(workdir, 'source.fb2')
+        html_path = Path(workdir, 'output.html')
+        try:
+            with fb2_path.open('wb') as source_file:
+                with closing(_book_chunks(source_path, member_name)) as chunks:
+                    for chunk in chunks:
+                        source_file.write(chunk)
+        except (FileNotFoundError, KeyError, zipfile.BadZipFile) as error:
+            raise Http404 from error
+
+        proc = subprocess.Popen(
+            [sys.executable, str(converter_path), str(fb2_path), '-o', str(html_path)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        try:
+            proc.communicate(timeout=CONVERTER_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as error:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.communicate()
+            raise Http404 from error
+        if proc.returncode != 0 or not html_path.is_file():
+            raise Http404
+
+        with html_path.open('r', encoding='utf-8') as output_file:
+            html = output_file.read()
         html = html.replace(
             "</head>",
             """
@@ -330,17 +331,7 @@ def ViewHtml(request, book_id):
         )
             
                                                                                                                                        
-        return HttpResponse(                                                                                                           
-            html,                                                                                                                      
-            content_type="text/html; charset=utf-8"                                                                                    
-        )                                                                                                                              
-                                                                                                                                       
-    finally:                                                                                                                           
-        if fb2_file and os.path.exists(fb2_file.name):                                                                                 
-            os.unlink(fb2_file.name)                                                                                                   
-                                                                                                                                       
-        if html_file and os.path.exists(html_file.name):                                                                               
-            os.unlink(html_file.name)
+        return HttpResponse(html, content_type="text/html; charset=utf-8")
 
 # Новая версия (0.42) процедуры извлечения обложек из файлов книг fb2, epub, mobi
 @cache_page(config.SOPDS_CACHE_TIME)
