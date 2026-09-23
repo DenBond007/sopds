@@ -421,3 +421,20 @@ exit 1). Другой конвертер завершился с кодом 7 п
 test-БД удалена. Логи: `.local/logs/m04-timeout-before.log`,
 `m04-converter-error-before.log`, `m04-timeout-targeted-final.log`,
 `m04-timeout-general.log`.
+
+M04.5: четыре адресных теста для Download обычной книги, ZIP-члена, INPX-члена
+и ZIP-обёртки подтвердили `response.streaming=False` (4 ожидаемых падения,
+exit 1). В `Download` исходный файл читается `read()` без размера и полностью
+пишется в `HttpResponse`; ресурсы закрываются только в конце успешного пути.
+Для ZIP-обёртки также создаётся весь архив в `BytesIO`. Test-БД удалена.
+Лог: `.local/logs/m04-stream-before.log`.
+
+M04.6: обычный файл отдаётся через `FileResponse`, ZIP/INPX-член — через
+`StreamingHttpResponse` порциями 64 КиБ. ZIP-обёртка собирается из порций в
+`TemporaryFile`, затем отдаётся как файл; имя вложенного элемента не содержит
+компонентов пути. Тесты проверили содержимое всех четырёх ветвей, несколько
+ограниченных порций для файла 150 КБ и имя ZIP-члена. Адресные 10/10, общий
+набор 85/85, exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-stream-targeted-final.log`, `m04-stream-general-final.log`.
+Вспомогательные `getFileData`/`getFileDataZip` ещё буферизуют файл целиком;
+они используются Telegram и конвертером и проверяются отдельно.

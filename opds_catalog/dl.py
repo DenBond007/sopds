@@ -7,9 +7,11 @@ import io
 import subprocess
 import tempfile
 import signal
+import zipfile as standard_zipfile
+from contextlib import closing
 from pathlib import Path
 
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, Http404, FileResponse, StreamingHttpResponse
 from django.views.decorators.cache import cache_page
 
 from opds_catalog.models import Book, bookshelf
@@ -25,6 +27,7 @@ from PIL import Image
 from opds_catalog.middleware import BasicAuthMiddleware
 
 CONVERTER_TIMEOUT_SECONDS = 300
+DOWNLOAD_CHUNK_SIZE = 64 * 1024
 
 def resolve_book_source_path(book):
     try:
@@ -51,6 +54,30 @@ def getFileName(book):
         transname = utils.translit(book.filename)
 
     return utils.to_ascii(transname)
+
+
+def _book_chunks(path, member_name=None):
+    with open(path, 'rb') as source:
+        if member_name is None:
+            reader = source
+            while chunk := reader.read(DOWNLOAD_CHUNK_SIZE):
+                yield chunk
+        else:
+            with zipfile.ZipFile(source, 'r', allowZip64=True) as archive:
+                with archive.open(member_name) as reader:
+                    while chunk := reader.read(DOWNLOAD_CHUNK_SIZE):
+                        yield chunk
+
+
+def _book_size(path, member_name=None):
+    if member_name is None:
+        return os.path.getsize(path)
+    try:
+        with open(path, 'rb') as source:
+            with zipfile.ZipFile(source, 'r', allowZip64=True) as archive:
+                return archive.getinfo(member_name).file_size
+    except (FileNotFoundError, KeyError, zipfile.BadZipFile):
+        raise Http404
 
 
 def getFileData(book):
@@ -161,67 +188,52 @@ def Download(request, book_id, zip_flag):
                 return request
         if request.user.is_authenticated:
             bookshelf.objects.get_or_create(user=request.user, book=book)
-            
-    full_path = resolve_book_source_path(book)
-        
-    if config.SOPDS_TITLE_AS_FILENAME:
-        transname=utils.translit(book.title+'.'+book.format)
-    else:
-        transname=utils.translit(book.filename)
-        
-    transname = utils.to_ascii(transname)
-        
+
+    source_path = resolve_book_source_path(book)
+    member_name = None if book.cat_type == opdsdb.CAT_NORMAL else book.filename
+    transname = getFileName(book).replace('\\', '/').rsplit('/', 1)[-1]
+    transname = transname.replace('"', '_').replace('\r', '_').replace('\n', '_')
+    if transname in ('', '.', '..'):
+        transname = 'book-%s.%s' % (book.pk, book.format)
+    dlfilename = transname + '.zip' if zip_flag == '1' else transname
+    content_type = (
+        Mimetype.FB2_ZIP if book.format == 'fb2' else Mimetype.ZIP
+    ) if zip_flag == '1' else mime_detector.fmt(book.format)
+
     if zip_flag == '1':
-        dlfilename=transname+'.zip'   
-        content_type= Mimetype.FB2_ZIP if book.format=='fb2' else Mimetype.ZIP
-    else:    
-        dlfilename=transname
-        content_type = mime_detector.fmt(book.format)
-
-    response = HttpResponse()
-    response["Content-Type"]='%s; name="%s"'%(content_type,dlfilename)
-    response["Content-Disposition"] = 'attachment; filename="%s"'%(dlfilename)
-    response["Content-Transfer-Encoding"]='binary'
-
-    z = None
-    fz = None
-    s = None
-    book_size = book.filesize
-    if book.cat_type==opdsdb.CAT_NORMAL:
-        file_path = full_path
-        book_size=os.path.getsize(file_path)
+        wrapped_file = tempfile.TemporaryFile(mode='w+b')
         try:
-            fo=codecs.open(file_path, "rb")
+            with standard_zipfile.ZipFile(
+                wrapped_file, 'w', compression=standard_zipfile.ZIP_DEFLATED,
+                allowZip64=True,
+            ) as wrapped:
+                with wrapped.open(transname, 'w', force_zip64=True) as output:
+                    with closing(_book_chunks(source_path, member_name)) as chunks:
+                        for chunk in chunks:
+                            output.write(chunk)
+            wrapped_file.seek(0)
+            response = FileResponse(wrapped_file, content_type=content_type)
+        except Exception:
+            wrapped_file.close()
+            raise
+    elif member_name is None:
+        try:
+            source_file = open(source_path, 'rb')
         except FileNotFoundError:
             raise Http404
-        s=fo.read()
-    elif book.cat_type in [opdsdb.CAT_ZIP, opdsdb.CAT_INP]:
-        try:
-            fz=codecs.open(full_path, "rb")
-        except FileNotFoundError:
-            raise Http404
-        z = zipfile.ZipFile(fz, 'r', allowZip64=True)
-        book_size=z.getinfo(book.filename).file_size
-        fo= z.open(book.filename)
-        s=fo.read()
-
-    if zip_flag=='1':
-        dio = io.BytesIO()
-        zo = zipfile.ZipFile(dio, 'w', zipfile.ZIP_DEFLATED)
-        zo.writestr(transname,s)
-        zo.close()
-        buf = dio.getvalue()
-        response["Content-Length"] = str(len(buf))
-        response.write(buf)        
+        response = FileResponse(source_file, content_type=content_type)
     else:
-        response["Content-Length"] = str(book_size)
-        response.write(s)
+        book_size = _book_size(source_path, member_name)
+        response = StreamingHttpResponse(
+            _book_chunks(source_path, member_name), content_type=content_type
+        )
+        response['Content-Length'] = str(book_size)
 
-    fo.close()
-    if z: z.close()
-    if fz: fz.close()
-
+    response['Content-Type'] = '%s; name="%s"' % (content_type, dlfilename)
+    response['Content-Disposition'] = 'attachment; filename="%s"' % dlfilename
+    response['Content-Transfer-Encoding'] = 'binary'
     return response
+
 
 def get_book_content(book):                                                                                                            
     full_path = resolve_book_source_path(book)
