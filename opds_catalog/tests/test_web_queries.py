@@ -10,6 +10,60 @@ from opds_catalog.models import Author
 
 
 class WebQueryTests(TestCase):
+    def test_book_search_keeps_duplicate_count_across_page_boundary(self):
+        config.SOPDS_AUTH = False
+        config.SOPDS_DOUBLES_HIDE = True
+        config.SOPDS_MAXITEMS = 1
+        catalog = opdsdb.addcattree('.')
+        author = opdsdb.addauthor('Duplicate Author')
+        for index, title in enumerate(('Duplicate', 'Duplicate', 'Dupz')):
+            book = opdsdb.addbook(
+                f'duplicate-{index}.fb2', '.', catalog, 'fb2',
+                title, 'Known', '', 'en', 10,
+            )
+            opdsdb.addbauthor(book, author)
+
+        response = self.client.get(reverse('web:searchbooks'), {
+            'searchtype': 'b', 'searchterms': 'Dup', 'page': 1,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['books']), 1)
+        self.assertEqual(response.context['books'][0]['doubles'], 1)
+
+    def test_book_search_batches_visible_relations(self):
+        config.SOPDS_AUTH = False
+        config.SOPDS_MAXITEMS = 60
+        catalog = opdsdb.addcattree('.')
+        author = opdsdb.addauthor('Search Author')
+        genre = opdsdb.addgenre('fantasy')
+        series = opdsdb.addseries('Search Series')
+        for index in range(5):
+            book = opdsdb.addbook(
+                f'book-{index}.fb2', '.', catalog, 'fb2',
+                f'Search Book {index}', 'Known', '', 'en', 10,
+            )
+            opdsdb.addbauthor(book, author)
+            opdsdb.addbgenre(book, genre)
+            opdsdb.addbseries(book, series, index + 1)
+
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(reverse('web:searchbooks'), {
+                'searchtype': 'm', 'searchterms': 'Search Book',
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Search Author', count=5)
+        relation_queries = [
+            query['sql'] for query in captured
+            if query['sql'].lstrip().upper().startswith('SELECT')
+            and any(table in query['sql'].upper() for table in (
+                'OPDS_CATALOG_BAUTHOR', 'OPDS_CATALOG_BGENRE',
+                'OPDS_CATALOG_BSERIES',
+            ))
+        ]
+        self.assertLessEqual(len(relation_queries), 4)
+
     def test_catalog_fetches_authors_once_for_page(self):
         config.SOPDS_AUTH = False
         config.SOPDS_MAXITEMS = 60

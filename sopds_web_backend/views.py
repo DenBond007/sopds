@@ -203,14 +203,8 @@ def SearchBooksView(request):
             #args['breadcrumbs'] = [_('Books'),mbook.title]
             args['searchobject'] = 'title'
         
-        # prefetch_related on sqlite on items >999 therow error "too many SQL variables"    
-        #if len(books)>0:
-        #    books = books.select_related('authors','genres','series')
-
-        # Добавляем Left Join с таблицей BookShelfб чтобы вытащить дату прочтения книги из книжной полки
-        #books = books.filter(Q(bookshelf__isnull=True)|Q(bookshelf__user=request.user))
-        #books = books.prefetch_related('bookshelf_set')
-        #print(books.query)
+        books_for_neighbors = books
+        books = books.prefetch_related('authors', 'genres', 'series', 'bseries_set')
 
         
         # Фильтруем дубликаты и формируем выдачу затребованной страницы
@@ -229,6 +223,13 @@ def SearchBooksView(request):
         
         for row in books[start:finish+1]:
             shortpath = row.path[row.path.rfind('/')+1:]
+            authors = [{'id': author.id, 'full_name': author.full_name}
+                       for author in row.authors.all()]
+            genres = [{'id': genre.id, 'subsection': genre.subsection}
+                      for genre in row.genres.all()]
+            series = [{'id': item.id, 'ser': item.ser}
+                      for item in row.series.all()]
+            ser_no = [{'ser_no': item.ser_no} for item in row.bseries_set.all()]
             # Get annotation if note done yet
             if row.annotation == 'NotYet':
                 row.annotation = get_annotation(row)
@@ -236,7 +237,7 @@ def SearchBooksView(request):
             p = {'doubles':0, 'lang_code': row.lang_code, 'filename': row.filename, 'path': row.path, 'shortpath': shortpath, \
                   'registerdate': row.registerdate, 'id': row.id, 'annotation': strip_tags(row.annotation), \
                   'docdate': row.docdate, 'lang': row.lang, 'format': row.format, 'title': row.title, 'filesize': row.filesize,\
-                  'authors': row.authors.values(), 'genres': row.genres.values(), 'series': row.series.values(),'ser_no': row.bseries_set.values('ser_no'),\
+                  'authors': authors, 'genres': genres, 'series': series, 'ser_no': ser_no,\
                   'readtime':row.bookshelf_set.filter(user=request.user).values('readtime') if config.SOPDS_AUTH else None
                  }
             if summary_DOUBLES_HIDE:
@@ -256,7 +257,7 @@ def SearchBooksView(request):
             double_flag = True
             while ((finish+1)<books_count) and double_flag:
                 finish += 1  
-                if books[finish].title.upper()==prev_title.upper() and {a['id'] for a in books[finish].authors.values()}==prev_authors_set:
+                if books_for_neighbors[finish].title.upper()==prev_title.upper() and {a['id'] for a in books_for_neighbors[finish].authors.values()}==prev_authors_set:
                     items[-1]['doubles']+=1
                 else:
                     double_flag = False   

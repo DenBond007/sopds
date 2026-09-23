@@ -114,13 +114,13 @@
             </td>
             <td rowspan="6" style="font-size:100%; padding:1rem 1rem;">
             {% trans "Book title:" %} <b> {{ b.title }} </b> <br>
-            {% if b.authors.count > 0 %}
+            {% if b.authors %}
                 {% trans "Authors:" %} <b> {% for a in b.authors %} <a href="{% url "web:searchbooks" %}?searchtype=a&searchterms={{a.id}}" >{{a.full_name}}</a>{% if not forloop.last %},{%endif%} {%endfor%} </b> <br>
             {% endif %}
-            {% if b.genres.count > 0 %}
+            {% if b.genres %}
                 {% trans "Genres:" %} <b> {% for g in b.genres %} <a href="{% url "web:searchbooks" %}?searchtype=g&searchterms={{g.id}}">{{g.subsection}}</a>{% if not forloop.last %},{%endif%} {%endfor%} </b> <br>
             {% endif %}
-            {% if b.series.count > 0 %}
+            {% if b.series %}
                 {% trans "Series:" %} <b> {% for s in b.series %} <a href="{% url "web:searchbooks" %}?searchtype=s&searchterms={{s.id}}">{{s.ser}}</a>{% if not forloop.last %},{%endif%} {%endfor%} </b> <br>
                 {% trans "No in Series:" %}<b>{% for s in b.ser_no %}{{s.ser_no}}{% if not forloop.last %},{%endif%} {%endfor%}</b>
 <br>
