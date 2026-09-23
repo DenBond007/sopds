@@ -10,6 +10,7 @@ dependencies = [
     "lxml>=5.4,<6",
     "Pillow>=11.3,<12",
     "psycopg2-binary>=2.9.10,<2.10",
+    "python-telegram-bot==22.8",
 ]
 
 [tool.uv]

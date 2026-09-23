@@ -195,3 +195,35 @@ M02.3: `.travis.yml`, `raspberry.txt`, `requirements.txt`, `Pipfile` и
 кодом 0 (11 пакетов). Старый Travis job отключён переносом конфигурации;
 автоматический CI для Python 3.13/PostgreSQL 17 пока не настроен. Исторические
 материалы не являются инструкцией к запуску.
+
+M02.4: с загруженным `.local/dev.env` и `DB_NAME=sopds_m00b_test` команды
+`manage.py check`, `makemigrations --check --dry-run` и `showmigrations --plan`
+завершились с кодом 0: замечаний нет, изменений схемы нет, исторические миграции
+Constance и каталога отмечены применёнными. Это проверка одноразовой БД, не
+миграция копии прежней рабочей БД. `manage.py help sopds_telebot` завершился с
+кодом 1 (`ModuleNotFoundError: No module named 'telegram'`); бот не запускался.
+Старый Redis backend содержит импорт удалённого `django.utils.six`, но backend
+неактивен и Redis не входит в целевой стек. Логи: `.local/logs/m02-check.log`,
+`m02-migrations-check.log`, `m02-migrations-plan.log`, `m02-telebot-help.log`.
+
+M02.5: [PyPI python-telegram-bot 22.8](https://pypi.org/project/python-telegram-bot/22.8/)
+указывает Python >=3.10 и поддержку Python 3.13. [Официальный переходный
+документ v20](https://github.com/python-telegram-bot/python-telegram-bot/wiki/Transition-guide-to-Version-20.0)
+описывает переход на asyncio, `Application` и `filters`: старые `Updater`,
+`Filters` и синхронные callback нельзя оставить как есть. [Документация Django
+5.2](https://docs.djangoproject.com/en/5.2/topics/async/) требует выносить
+синхронный ORM из async-контекста через `sync_to_async`. В текущем боте шесть
+callback и два декоратора, несколько вызовов Bot API и синхронный доступ к ORM;
+следовательно, нужна адаптация всей команды и адресные тесты с подменой Bot API.
+Живой токен и Telegram-сеть для тестирования не используются. Библиотека будет
+добавлена в основной стек, как и в исторических requirements, чтобы команда
+загружалась при обычном запуске Django.
+
+M02.6a: python-telegram-bot 22.8 добавлен в `pyproject.toml`, `uv lock` разрешил
+19 пакетов, `uv sync --python python3.13 --frozen` установил 8 новых пакетов
+только в `.venv` (обе команды exit 0). `uv lock --check --offline`, импорт с
+версией 22.8 и Django check прошли. `manage.py help sopds_telebot` теперь
+завершается с кодом 1 на `ImportError: cannot import name 'Filters'` — ожидаемый
+разрыв API v13, подзадача M02.6b. Бот не запускался. Логи:
+`.local/logs/m02-telegram-lock.log`, `m02-telegram-sync.log`,
+`m02-telegram-help-after-dep.log`, `m02-telegram-check.log`.
