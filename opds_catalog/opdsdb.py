@@ -230,10 +230,31 @@ def findbook(name, path, setavail=0):
 
     return book
 
-def addbook(name, path, cat, exten, title, annotation, docdate, lang, size=0, archive=0):
+def addbook(name, path, cat, exten, title, annotation, docdate, lang, size=0, archive=0, source_mtime_ns=None):
     book = Book.objects.create(filename=name[:SIZE_BOOK_FILENAME],path=path[:SIZE_BOOK_PATH],catalog=cat,filesize=size,format=exten.lower()[:SIZE_BOOK_FORMAT],
                 title=title[:SIZE_BOOK_TITLE],search_title=title.upper()[:SIZE_BOOK_TITLE],annotation=p(annotation,SIZE_BOOK_ANNOTATION),
-                docdate=docdate[:SIZE_BOOK_DOCDATE],lang=lang[:SIZE_BOOK_LANG],cat_type=archive,avail=2, lang_code=getlangcode(title))
+                docdate=docdate[:SIZE_BOOK_DOCDATE],lang=lang[:SIZE_BOOK_LANG],cat_type=archive,avail=2, lang_code=getlangcode(title),
+                source_mtime_ns=source_mtime_ns)
+    return book
+
+
+def updatebook(book, cat, exten, title, annotation, docdate, lang, size, archive, source_mtime_ns=None):
+    book.catalog = cat
+    book.filesize = size
+    book.format = exten.lower()[:SIZE_BOOK_FORMAT]
+    book.title = title[:SIZE_BOOK_TITLE]
+    book.search_title = title.upper()[:SIZE_BOOK_TITLE]
+    book.annotation = p(annotation, SIZE_BOOK_ANNOTATION)
+    book.docdate = docdate[:SIZE_BOOK_DOCDATE]
+    book.lang = lang[:SIZE_BOOK_LANG]
+    book.lang_code = getlangcode(title)
+    book.cat_type = archive
+    book.avail = 2
+    book.source_mtime_ns = source_mtime_ns
+    book.save(update_fields=[
+        'catalog', 'filesize', 'format', 'title', 'search_title', 'annotation',
+        'docdate', 'lang', 'lang_code', 'cat_type', 'avail', 'source_mtime_ns',
+    ])
     return book
 
 def findauthor(full_name):

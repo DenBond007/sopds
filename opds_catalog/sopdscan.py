@@ -53,6 +53,7 @@ class opdsScanner:
         self.t2=self.t1
         self.t3=self.t1
         self.books_added = 0
+        self.books_updated = 0
         self.books_skipped = 0
         self.books_deleted = 0
         self.arch_scanned = 0
@@ -77,6 +78,7 @@ class opdsScanner:
     def log_stats(self):
         self.t2=datetime.timedelta(seconds=time.time())
         self.logger.info('Books added      : '+str(self.books_added))
+        self.logger.info('Books updated    : '+str(self.books_updated))
         self.logger.info('Books skipped    : '+str(self.books_skipped))
         self.logger.info('Bad books        : '+str(self.bad_books))
         if config.SOPDS_DELETE_LOGICAL:
@@ -242,7 +244,16 @@ class opdsScanner:
             rel_path=os.path.relpath(full_path,config.SOPDS_ROOT_LIB)
             self.logger.debug("Attempt to add book "+rel_path+"/"+name)
             try:
-                if opdsdb.findbook(name, rel_path, 1) == None:
+                source_mtime_ns = (
+                    os.stat(file).st_mtime_ns
+                    if archive == 0 and isinstance(file, (str, os.PathLike)) else None
+                )
+                existing = opdsdb.findbook(name, rel_path, 1)
+                changed = (
+                    existing is None or archive != 0 or existing.filesize != file_size
+                    or existing.source_mtime_ns != source_mtime_ns
+                )
+                if changed:
                     if archive==0:
                         cat=opdsdb.addcattree(rel_path,archive)
 
@@ -264,31 +275,40 @@ class opdsScanner:
                         annotation = annotation.strip(' \'\&\n-.#\\\`') if isinstance(annotation, str) else annotation.decode('utf8').strip(' \'\&\n-.#\\\`')
                         docdate = book_data.docdate if book_data.docdate else ''
 
-                        book=opdsdb.addbook(name,rel_path,cat,e[1:],title,annotation,docdate,lang,file_size,archive)
-                        self.books_added+=1
+                        with transaction.atomic():
+                            if existing is None:
+                                book=opdsdb.addbook(name,rel_path,cat,e[1:],title,annotation,docdate,lang,file_size,archive,source_mtime_ns)
+                            else:
+                                book=opdsdb.updatebook(existing,cat,e[1:],title,annotation,docdate,lang,file_size,archive,source_mtime_ns)
+                                book.authors.clear()
+                                book.genres.clear()
+                                book.series.clear()
 
+                            for a in book_data.authors:
+                                author_name = a.get('name',_('Unknown author')).strip(strip_symbols)
+                                # Если в имени автора нет запятой, то фамилию переносим из конца в начало
+                                if author_name and author_name.find(',')<0:
+                                    author_names = author_name.split()
+                                    author_name = ' '.join([author_names[-1],' '.join(author_names[:-1])])
+                                author=opdsdb.addauthor(author_name)
+                                opdsdb.addbauthor(book,author)
+
+                            for genre in book_data.tags:
+                                opdsdb.addbgenre(book,opdsdb.addgenre(genre.lower().strip(strip_symbols)))
+
+                            if book_data.series_info:
+                                ser = opdsdb.addseries(book_data.series_info['title'])
+                                ser_no = book_data.series_info['index']  or '0'
+                                ser_no = int(ser_no) if ser_no.isdigit() else 0
+                                opdsdb.addbseries(book,ser,ser_no)
+
+                        if existing is None:
+                            self.books_added+=1
+                        else:
+                            self.books_updated+=1
                         if archive!=0:
                             self.books_in_archives+=1
-                        self.logger.debug("Book "+rel_path+"/"+name+" Added ok.")
-
-                        for a in book_data.authors:
-                            author_name = a.get('name',_('Unknown author')).strip(strip_symbols)
-                            # Если в имени автора нет запятой, то фамилию переносим из конца в начало
-                            if author_name and author_name.find(',')<0:
-                                author_names = author_name.split()
-                                author_name = ' '.join([author_names[-1],' '.join(author_names[:-1])])
-                            author=opdsdb.addauthor(author_name)
-                            opdsdb.addbauthor(book,author)
-
-                        for genre in book_data.tags:
-                            opdsdb.addbgenre(book,opdsdb.addgenre(genre.lower().strip(strip_symbols)))
-
-
-                        if book_data.series_info:
-                            ser = opdsdb.addseries(book_data.series_info['title'])
-                            ser_no = book_data.series_info['index']  or '0'
-                            ser_no = int(ser_no) if ser_no.isdigit() else 0
-                            opdsdb.addbseries(book,ser,ser_no)
+                        self.logger.debug("Book "+rel_path+"/"+name+" Processed ok.")
                 else:
                     self.books_skipped+=1
                     self.logger.debug("Book "+rel_path+"/"+name+" Already in DB.")
