@@ -360,7 +360,7 @@ class ScanDataSafetyTests(TestCase):
             with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr(source.name, source.read_bytes())
                 archive.writestr('huge.fb2', b'x' * 500001)
-            with patch('opds_catalog.sopdscan.MAX_SCANNED_ARCHIVE_BOOK_BYTES', 500000,
+            with patch('opds_catalog.sopdscan.MAX_SCANNED_BOOK_BYTES', 500000,
                        create=True), \
                  patch('opds_catalog.sopdscan.create_bookfile',
                        wraps=create_bookfile) as parse:
@@ -375,6 +375,32 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
         self.assertEqual(catalog.source_mtime_ns, original_mtime)
         self.assertEqual(scanner.bad_archives, 1)
+
+    def test_oversize_regular_book_is_not_parsed_and_keeps_existing_shelf(self):
+        source = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            target = Path(root, source.name)
+            config.SOPDS_ROOT_LIB = root
+            target.write_bytes(source.read_bytes())
+            opdsScanner().scan_all()
+            book = Book.objects.get(filename=source.name)
+            user = User.objects.create_user('oversize_regular', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=book)
+
+            target.write_bytes(b'x' * 129)
+            with patch('opds_catalog.sopdscan.MAX_SCANNED_BOOK_BYTES', 128,
+                       create=True), \
+                 patch('opds_catalog.sopdscan.create_bookfile',
+                       wraps=create_bookfile) as parse:
+                scanner = opdsScanner()
+                scanner.scan_all()
+
+        parse.assert_not_called()
+        book.refresh_from_db()
+        self.assertEqual(book.title, 'The Sanctuary Sparrow')
+        self.assertEqual(book.avail, 2)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+        self.assertEqual(scanner.bad_books, 1)
 
     def test_zip_book_parse_error_rolls_back_earlier_updates(self):
         source = Path(__file__).parent / 'data' / '262001.fb2'
