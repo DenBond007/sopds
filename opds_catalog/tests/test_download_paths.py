@@ -12,6 +12,51 @@ from opds_catalog import dl, opdsdb
 
 
 class DownloadPathTests(TestCase):
+    def test_helper_returns_disk_backed_book_file(self):
+        payload = b'x' * 150_000
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            Path(root, 'inside.fb2').write_bytes(payload)
+            catalog = opdsdb.addcattree('.')
+            book = opdsdb.addbook(
+                'inside.fb2', '.', catalog, 'fb2', 'Inside', '', '', 'en', len(payload)
+            )
+            with dl.getFileData(book) as document:
+                self.assertGreaterEqual(document.fileno(), 0)
+                self.assertEqual(document.read(), payload)
+            self.assertTrue(document.closed)
+
+    def test_zip_helper_returns_disk_backed_archive(self):
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_TITLE_AS_FILENAME = False
+            Path(root, 'inside.fb2').write_bytes(b'synthetic book')
+            catalog = opdsdb.addcattree('.')
+            book = opdsdb.addbook(
+                'inside.fb2', '.', catalog, 'fb2', 'Inside', '', '', 'en', 14
+            )
+            with dl.getFileDataZip(book) as document:
+                self.assertGreaterEqual(document.fileno(), 0)
+                with zipfile.ZipFile(document) as archive:
+                    self.assertEqual(archive.read('inside.fb2'), b'synthetic book')
+            self.assertTrue(document.closed)
+
+    def test_zip_helper_removes_path_components_from_member_name(self):
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_TITLE_AS_FILENAME = False
+            with zipfile.ZipFile(Path(root, 'books.zip'), 'w') as archive:
+                archive.writestr('../outside.fb2', b'synthetic book')
+            catalog = opdsdb.addcattree('.')
+            book = opdsdb.addbook(
+                '../outside.fb2', 'books.zip', catalog, 'fb2', 'Outside',
+                '', '', 'en', 14, opdsdb.CAT_ZIP
+            )
+            with dl.getFileDataZip(book) as document:
+                with zipfile.ZipFile(document) as archive:
+                    self.assertEqual(archive.namelist(), ['outside.fb2'])
+                    self.assertEqual(archive.read('outside.fb2'), b'synthetic book')
+
     def test_regular_download_streams_bounded_chunks_and_closes_file(self):
         payload = b'x' * 150_000
         with TemporaryDirectory() as root:

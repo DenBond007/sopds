@@ -438,3 +438,12 @@ M04.6: обычный файл отдаётся через `FileResponse`, ZIP/I
 `.local/logs/m04-stream-targeted-final.log`, `m04-stream-general-final.log`.
 Вспомогательные `getFileData`/`getFileDataZip` ещё буферизуют файл целиком;
 они используются Telegram и конвертером и проверяются отдельно.
+
+M04.7: `getFileData` и `getFileDataZip` прежде возвращали `BytesIO`, что
+подтверждено двумя ошибками `fileno` в адресных тестах (exit 1). Теперь оба
+возвращают закрываемые файловые временные буферы и переносят книгу порциями;
+ZIP-имя лишено компонентов пути. Проверены чтение книги, ZIP для Telegram,
+сохранение интерфейса конвертации и завершение буферов после `with`.
+Затронутые 23/23 и общий набор 88/88 тестов прошли, exit 0, замечаний
+Django нет; test-БД удалена. Логи: `.local/logs/m04-helper-before.log`,
+`m04-helper-targeted-last.log`, `m04-helper-general.log`.

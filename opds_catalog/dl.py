@@ -56,6 +56,14 @@ def getFileName(book):
     return utils.to_ascii(transname)
 
 
+def safe_download_filename(book):
+    filename = getFileName(book).replace('\\', '/').rsplit('/', 1)[-1]
+    filename = filename.replace('"', '_').replace('\r', '_').replace('\n', '_')
+    if filename in ('', '.', '..'):
+        filename = 'book-%s.%s' % (book.pk, book.format)
+    return filename
+
+
 def _book_chunks(path, member_name=None):
     with open(path, 'rb') as source:
         if member_name is None:
@@ -81,52 +89,48 @@ def _book_size(path, member_name=None):
 
 
 def getFileData(book):
-    full_path = resolve_book_source_path(book)
+    source_path = resolve_book_source_path(book)
+    member_name = None if book.cat_type == opdsdb.CAT_NORMAL else book.filename
+    buffer = tempfile.TemporaryFile(mode='w+b')
+    try:
+        with closing(_book_chunks(source_path, member_name)) as chunks:
+            for chunk in chunks:
+                buffer.write(chunk)
+        buffer.seek(0)
+        return buffer
+    except (FileNotFoundError, KeyError, zipfile.BadZipFile) as error:
+        buffer.close()
+        raise Http404 from error
+    except BaseException:
+        buffer.close()
+        raise
 
-    z = None
-    fz = None
-    s = None
-    fo = None
-
-    if book.cat_type==opdsdb.CAT_NORMAL:
-        file_path = full_path
-        try:
-            fo=codecs.open(file_path, "rb")
-            #s = fo.read()
-        except FileNotFoundError:
-            #s = None
-            fo = None
-
-    elif book.cat_type in [opdsdb.CAT_ZIP, opdsdb.CAT_INP]:
-        try:
-            fz=codecs.open(full_path, "rb")
-            z = zipfile.ZipFile(fz, 'r', allowZip64=True)
-            fo= z.open(book.filename)
-            #s=fo.read()
-        except FileNotFoundError:
-            #s = None
-            fo = None
-
-    dio = io.BytesIO()
-    dio.write(fo.read())
-    dio.seek(0)
-
-    if fo: fo.close()
-    if z: z.close()
-    if fz: fz.close()
-
-    return dio
 
 def getFileDataZip(book):
-    transname = getFileName(book)
-    fo = getFileData(book)
-    dio = io.BytesIO()
-    zo = zipfile.ZipFile(dio, 'w', zipfile.ZIP_DEFLATED)
-    zo.writestr(transname, fo.read())
-    zo.close()
-    dio.seek(0)
+    source = getFileData(book)
+    try:
+        archive_file = tempfile.TemporaryFile(mode='w+b')
+    except BaseException:
+        source.close()
+        raise
+    try:
+        with source, standard_zipfile.ZipFile(
+            archive_file, 'w', compression=standard_zipfile.ZIP_DEFLATED,
+            allowZip64=True,
+        ) as archive:
+            entry = standard_zipfile.ZipInfo(safe_download_filename(book))
+            entry.compress_type = standard_zipfile.ZIP_DEFLATED
+            entry.file_size = os.fstat(source.fileno()).st_size
+            with archive.open(entry, 'w') as output:
+                while chunk := source.read(DOWNLOAD_CHUNK_SIZE):
+                    output.write(chunk)
+        archive_file.seek(0)
+        return archive_file
+    except BaseException:
+        source.close()
+        archive_file.close()
+        raise
 
-    return dio
 
 def getFileDataConv(book, convert_type):
     if book.format != 'fb2':
@@ -191,10 +195,7 @@ def Download(request, book_id, zip_flag):
 
     source_path = resolve_book_source_path(book)
     member_name = None if book.cat_type == opdsdb.CAT_NORMAL else book.filename
-    transname = getFileName(book).replace('\\', '/').rsplit('/', 1)[-1]
-    transname = transname.replace('"', '_').replace('\r', '_').replace('\n', '_')
-    if transname in ('', '.', '..'):
-        transname = 'book-%s.%s' % (book.pk, book.format)
+    transname = safe_download_filename(book)
     dlfilename = transname + '.zip' if zip_flag == '1' else transname
     content_type = (
         Mimetype.FB2_ZIP if book.format == 'fb2' else Mimetype.ZIP
@@ -207,7 +208,10 @@ def Download(request, book_id, zip_flag):
                 wrapped_file, 'w', compression=standard_zipfile.ZIP_DEFLATED,
                 allowZip64=True,
             ) as wrapped:
-                with wrapped.open(transname, 'w', force_zip64=True) as output:
+                entry = standard_zipfile.ZipInfo(transname)
+                entry.compress_type = standard_zipfile.ZIP_DEFLATED
+                entry.file_size = _book_size(source_path, member_name)
+                with wrapped.open(entry, 'w') as output:
                     with closing(_book_chunks(source_path, member_name)) as chunks:
                         for chunk in chunks:
                             output.write(chunk)
