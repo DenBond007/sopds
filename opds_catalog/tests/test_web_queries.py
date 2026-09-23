@@ -5,11 +5,64 @@ from django.urls import reverse
 
 from constance import config
 from opds_catalog import opdsdb
-from opds_catalog.feeds import SearchAuthorsFeed
+from opds_catalog.feeds import SearchAuthorsFeed, SearchBooksFeed
 from opds_catalog.models import Author
 
 
 class WebQueryTests(TestCase):
+    def test_opds_book_search_keeps_duplicate_count_across_page_boundary(self):
+        config.SOPDS_AUTH = False
+        config.SOPDS_DOUBLES_HIDE = True
+        config.SOPDS_MAXITEMS = 1
+        catalog = opdsdb.addcattree('.')
+        author = opdsdb.addauthor('OPDS Duplicate Author')
+        for index, title in enumerate(('Duplicate', 'Duplicate', 'Dupz')):
+            book = opdsdb.addbook(
+                f'opds-duplicate-{index}.fb2', '.', catalog, 'fb2',
+                title, 'Known', '', 'en', 10,
+            )
+            opdsdb.addbauthor(book, author)
+
+        rows = SearchBooksFeed().get_object(
+            None, searchtype='b', searchterms='Dup', page=1,
+        )['books']
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['doubles'], 1)
+
+    def test_opds_book_search_batches_visible_relations(self):
+        config.SOPDS_AUTH = False
+        config.SOPDS_MAXITEMS = 60
+        catalog = opdsdb.addcattree('.')
+        author = opdsdb.addauthor('OPDS Author')
+        genre = opdsdb.addgenre('fantasy')
+        series = opdsdb.addseries('OPDS Series')
+        for index in range(5):
+            book = opdsdb.addbook(
+                f'opds-{index}.fb2', '.', catalog, 'fb2',
+                f'OPDS Book {index}', 'Known', '', 'en', 10,
+            )
+            opdsdb.addbauthor(book, author)
+            opdsdb.addbgenre(book, genre)
+            opdsdb.addbseries(book, series, index + 1)
+
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(reverse('opds_catalog:searchbooks',
+                                               kwargs={'searchtype': 'm',
+                                                       'searchterms': 'OPDS Book'}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'OPDS Author', response.content)
+        relation_queries = [
+            query['sql'] for query in captured
+            if query['sql'].lstrip().upper().startswith('SELECT')
+            and any(table in query['sql'].upper() for table in (
+                'OPDS_CATALOG_BAUTHOR', 'OPDS_CATALOG_BGENRE',
+                'OPDS_CATALOG_BSERIES',
+            ))
+        ]
+        self.assertLessEqual(len(relation_queries), 4)
+
     def test_book_search_keeps_duplicate_count_across_page_boundary(self):
         config.SOPDS_AUTH = False
         config.SOPDS_DOUBLES_HIDE = True

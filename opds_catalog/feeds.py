@@ -451,9 +451,8 @@ class SearchBooksFeed(AuthFeed):
             mbook = Book.objects.get(id=book_id)
             books = Book.objects.filter(title__iexact=mbook.title, authors__in=mbook.authors.all()).exclude(id=book_id).order_by('search_title','-docdate')
                     
-        # prefetch_related on sqlite on items >999 therow error "too many SQL variables"
-        #if len(books)>0:            
-            #books = books.prefetch_related('authors','genres','series').order_by('title','authors','-docdate')
+        books_for_neighbors = books
+        books = books.prefetch_related('authors', 'genres', 'series', 'bseries_set')
                  
         # Фильтруем дубликаты
         books_count = books.count()
@@ -470,10 +469,17 @@ class SearchBooksFeed(AuthFeed):
         finish = op.d1_last_pos
         
         for row in books[start:finish+1]:
+            authors = [{'id': author.id, 'full_name': author.full_name}
+                       for author in row.authors.all()]
+            genres = [{'id': genre.id, 'subsection': genre.subsection}
+                      for genre in row.genres.all()]
+            series = [{'id': item.id, 'ser': item.ser}
+                      for item in row.series.all()]
+            ser_no = [{'ser_no': item.ser_no} for item in row.bseries_set.all()]
             p = {'doubles':0, 'lang_code': row.lang_code, 'filename': row.filename, 'path': row.path, \
                   'registerdate': row.registerdate, 'id': row.id, 'annotation': strip_tags(row.annotation), \
                   'docdate': row.docdate, 'format': row.format, 'title': row.title, 'filesize': row.filesize//1000,
-                  'authors':row.authors.values(), 'genres':row.genres.values(), 'series':row.series.values(), 'ser_no':row.bseries_set.values('ser_no')}
+                  'authors':authors, 'genres':genres, 'series':series, 'ser_no':ser_no}
             if summary_DOUBLES_HIDE:
                 title = p['title'] 
                 authors_set = {a['id'] for a in p['authors']}         
@@ -491,7 +497,7 @@ class SearchBooksFeed(AuthFeed):
             double_flag = True
             while ((finish+1)<books_count) and double_flag:
                 finish += 1  
-                if books[finish].title.upper()==prev_title.upper() and {a['id'] for a in books[finish].authors.values()}==prev_authors_set:
+                if books_for_neighbors[finish].title.upper()==prev_title.upper() and {a['id'] for a in books_for_neighbors[finish].authors.values()}==prev_authors_set:
                     items[-1]['doubles']+=1
                 else:
                     double_flag = False   
