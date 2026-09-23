@@ -40,6 +40,7 @@ class Book(models.Model):
     path = models.CharField(max_length=SIZE_BOOK_PATH,db_index=True)
     filesize = models.IntegerField(null=False, default=0)
     source_mtime_ns = models.BigIntegerField(null=True, blank=True)
+    last_seen_scan_id = models.UUIDField(null=True, blank=True)
     format = models.CharField(max_length=SIZE_BOOK_FORMAT)
     catalog = models.ForeignKey('Catalog',db_index=True, on_delete=models.CASCADE)
     cat_type = models.IntegerField(null=False, default=0)
@@ -141,4 +142,3 @@ class Counter(models.Model):
     obj = models.Manager()
     objects = CounterManager()
     
-
