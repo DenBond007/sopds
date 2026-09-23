@@ -23,18 +23,16 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # See https://docs.djangoproject.com/en/1.9/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-try:
-    # open file with random secret key
-    with open("/sopds/secret.key","r") as f:
-        SECRET_KEY = f.read()
-except FileNotFoundError as e:
-    # use standard secret key
-    SECRET_KEY = 'm4l1c#nq6*zs!c3ri4dg4(54_7bvrl5uintni6p20tijlaxv!x'
+SECRET_KEY = os.environ.get("SOPDS_SECRET_KEY", "").strip()
+if len(SECRET_KEY) < 32:
+    raise RuntimeError("SOPDS_SECRET_KEY must be set to at least 32 characters")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = ['*']
+DEBUG = os.environ.get("SOPDS_DEBUG", "0") == "1"
+ALLOWED_HOSTS = [
+    host.strip() for host in os.environ.get(
+        "SOPDS_ALLOWED_HOSTS", "127.0.0.1,localhost"
+    ).split(",") if host.strip()
+]
 
 # Application definition
 INSTALLED_APPS = [

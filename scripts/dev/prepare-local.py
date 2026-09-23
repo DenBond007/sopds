@@ -27,6 +27,30 @@ def write_private(path: Path, content: str) -> None:
         stream.write(content)
 
 
+def ensure_app_settings(path: Path) -> None:
+    """Add missing dev-only Django settings without replacing existing values."""
+    if path.stat().st_mode & 0o077:
+        raise RuntimeError(".local/dev.env must not be readable by other users.")
+    content = path.read_text(encoding="utf-8")
+    keys = {
+        line.split("=", 1)[0].strip()
+        for line in content.splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    }
+    additions = {
+        "SOPDS_SECRET_KEY": secrets.token_urlsafe(48),
+        "SOPDS_DEBUG": "1",
+        "SOPDS_ALLOWED_HOSTS": "127.0.0.1,localhost,testserver",
+    }
+    missing = [key for key in additions if key not in keys]
+    if missing:
+        with path.open("a", encoding="utf-8") as stream:
+            if content and not content.endswith("\n"):
+                stream.write("\n")
+            for key in missing:
+                stream.write(f"{key}={shlex.quote(additions[key])}\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
@@ -62,7 +86,9 @@ def main() -> int:
     if db_env.exists() != app_env.exists():
         raise RuntimeError("Only one env file exists. Restore the matching file; do not regenerate database passwords.")
     if db_env.exists():
-        print("Existing .local/postgres.env and .local/dev.env left unchanged.")
+        ensure_app_settings(app_env)
+        print("Existing database credentials left unchanged.")
+        print("Missing app-only settings added to dev.env if needed; credentials not printed.")
         print("If the checkout moved, review non-secret path values in dev.env locally.")
         return 0
 
@@ -82,6 +108,9 @@ def main() -> int:
         "SOPDS_DEV_LIBRARY": str(local / "library"),
         "SOPDS_DEV_TMP": str(local / "tmp"),
         "UV_CACHE_DIR": str(local / "uv-cache"),
+        "SOPDS_SECRET_KEY": secrets.token_urlsafe(48),
+        "SOPDS_DEBUG": "1",
+        "SOPDS_ALLOWED_HOSTS": "127.0.0.1,localhost,testserver",
     }
     app_content = "# Development-only variables. Never print or commit this file.\n"
     app_content += "".join(f"{key}={shlex.quote(value)}\n" for key, value in app_vars.items())

@@ -1,7 +1,9 @@
 import os
+import logging
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.test import TestCase
@@ -9,6 +11,7 @@ from django.test import TestCase
 from constance import config
 from opds_catalog import opdsdb
 from opds_catalog.models import Book, Catalog, bookshelf
+from opds_catalog.management.commands.sopds_scanner import Command as ScannerCommand
 from opds_catalog.sopdscan import opdsScanner
 
 
@@ -93,6 +96,28 @@ class ScanDataSafetyTests(TestCase):
 
             shutil.copyfile(fixture, copied)
             opdsScanner().scan_all()
+
+        self.assertEqual(Book.objects.get(pk=book.pk).avail, 2)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+
+    def test_walk_error_rolls_back_availability_and_keeps_shelf(self):
+        catalog = opdsdb.addcattree('.')
+        book = opdsdb.addbook(
+            'preserved.fb2', '.', catalog, 'fb2', 'Preserved', '', '', 'en', 100
+        )
+        user = User.objects.create_user('walk_error', password='test-password')
+        shelf = bookshelf.objects.create(user=user, book=book)
+
+        def fail_walk(*args, onerror, **kwargs):
+            onerror(PermissionError('test traversal failure'))
+
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            command = ScannerCommand()
+            command.logger = logging.getLogger('scan-safety-test')
+            with patch('opds_catalog.sopdscan.os.walk', side_effect=fail_walk):
+                with self.assertRaises(PermissionError):
+                    command.scan()
 
         self.assertEqual(Book.objects.get(pk=book.pk).avail, 2)
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
