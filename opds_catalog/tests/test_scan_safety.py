@@ -400,6 +400,39 @@ class ScanDataSafetyTests(TestCase):
 
 
 class ScannerConcurrencyTests(TransactionTestCase):
+    def test_interrupted_scan_rolls_back_partial_changes_and_deletions(self):
+        source = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            old_file = Path(root, source.name)
+            shutil.copyfile(source, old_file)
+            command = ScannerCommand()
+            command.logger = logging.getLogger('scan-interruption-test')
+            command.scan()
+            book = Book.objects.get(filename=source.name)
+            user = User.objects.create_user('interrupted_scan', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=book)
+
+            old_file.unlink()
+            shutil.copyfile(source, Path(root, 'new.fb2'))
+            original_processfile = opdsScanner.processfile
+
+            def process_then_interrupt(scanner, *args, **kwargs):
+                original_processfile(scanner, *args, **kwargs)
+                raise RuntimeError('interrupt after inserting the new book')
+
+            with patch('opds_catalog.sopdscan.opdsScanner.processfile',
+                       process_then_interrupt):
+                with self.assertRaises(RuntimeError):
+                    command.scan()
+
+        book.refresh_from_db()
+        self.assertEqual(book.avail, 2)
+        self.assertEqual(Book.objects.count(), 1)
+        self.assertFalse(Book.objects.filter(filename='new.fb2').exists())
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+        self.assertFalse(command.scan_is_active)
+
     def test_second_command_skips_while_first_scan_is_running(self):
         entered = threading.Event()
         release = threading.Event()
