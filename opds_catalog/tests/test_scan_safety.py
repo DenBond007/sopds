@@ -48,3 +48,51 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(Book.objects.get(filename=fixture.name).pk, book_id)
         self.assertEqual(Book.objects.get(pk=book_id).catalog_id, catalog_id)
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book_id)
+
+    def test_logical_delete_setting_preserves_missing_book_and_shelf(self):
+        fixture = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            copied = Path(root) / fixture.name
+            shutil.copyfile(fixture, copied)
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_DELETE_LOGICAL = True
+            opdsScanner().scan_all()
+            book = Book.objects.get(filename=fixture.name)
+            user = User.objects.create_user('logical_delete', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=book)
+
+            copied.unlink()
+            opdsScanner().scan_all()
+
+            self.assertEqual(Book.objects.get(pk=book.pk).avail, 0)
+            self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+
+            shutil.copyfile(fixture, copied)
+            opdsScanner().scan_all()
+
+        self.assertEqual(Book.objects.get(pk=book.pk).avail, 2)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+
+    def test_physical_delete_setting_keeps_shelved_book(self):
+        fixture = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            copied = Path(root) / fixture.name
+            shutil.copyfile(fixture, copied)
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_DELETE_LOGICAL = False
+            opdsScanner().scan_all()
+            book = Book.objects.get(filename=fixture.name)
+            user = User.objects.create_user('shelved_delete', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=book)
+
+            copied.unlink()
+            opdsScanner().scan_all()
+
+            self.assertEqual(Book.objects.get(pk=book.pk).avail, 0)
+            self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+
+            shutil.copyfile(fixture, copied)
+            opdsScanner().scan_all()
+
+        self.assertEqual(Book.objects.get(pk=book.pk).avail, 2)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)

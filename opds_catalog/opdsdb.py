@@ -103,11 +103,13 @@ def books_del_logical():
     return row_count
 
 def books_del_phisical():
-    row_count = Book.objects.filter(avail__lte=1).delete()
-    # TODO: Разобратся нужно ли удалять записи в таблицах связи ManyToMany или они сами удалятся?
-    # sql='delete from '+TBL_BAUTHORS+' where book_id in (select book_id from '+TBL_BOOKS+' where avail<=1)'
-    # sql='delete from '+TBL_BGENRES+' where book_id in (select book_id from '+TBL_BOOKS+' where avail<=1)'
-    return row_count
+    # A shelved book must retain its ID and user relationship when its file disappears.
+    shelved_ids = bookshelf.objects.values("book_id")
+    Book.objects.filter(avail__lte=1, pk__in=shelved_ids).update(avail=0)
+    deleted_count, _ = Book.objects.filter(avail__lte=1).exclude(
+        pk__in=shelved_ids
+    ).delete()
+    return deleted_count
 
 def arc_skip(arcpath,arcsize):
     """

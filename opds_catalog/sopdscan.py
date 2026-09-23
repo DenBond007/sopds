@@ -132,13 +132,11 @@ class opdsScanner:
                     file_size=os.path.getsize(file)
                     self.processfile(name,full_path,file,None,0,file_size)                   
 
-        #if config.SOPDS_DELETE_LOGICAL:
-        #    self.books_deleted=opdsdb.books_del_logical()
-        #else:
-        #    self.books_deleted=opdsdb.books_del_phisical()
-            
-        self.books_deleted=opdsdb.books_del_phisical()
-        
+        if config.SOPDS_DELETE_LOGICAL:
+            self.books_deleted = opdsdb.books_del_logical()
+        else:
+            self.books_deleted = opdsdb.books_del_phisical()
+
         self.log_stats()
 
     def inpskip_callback(self, inpx, inp_file, inp_size):

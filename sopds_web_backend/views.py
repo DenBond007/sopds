@@ -18,6 +18,7 @@ from django.http import HttpResponseForbidden
 from book_tools.format import create_bookfile
 import opds_catalog.zipf as zipfile
 from opds_catalog import models
+from opds_catalog.prefix_query import prefix_groups
 from opds_catalog.models import Book, Author, Series, bookshelf, Counter, Catalog, Genre, lang_menu
 from opds_catalog import settings
 from constance import config
@@ -441,22 +442,8 @@ def BooksView(request):
         lang_code = 0
         chars = ''
         
-    length = len(chars)+1
-    if lang_code:
-        sql="""select %(length)s as l, substring(search_title,1,%(length)s) as id, count(*) as cnt 
-               from opds_catalog_book 
-               where lang_code=%(lang_code)s and search_title like '%(chars)s%%%%'
-               group by substring(search_title,1,%(length)s) 
-               order by id"""%{'length':length, 'lang_code':lang_code, 'chars':chars}
-    else:
-        sql="""select %(length)s as l, substring(search_title,1,%(length)s) as id, count(*) as cnt 
-               from opds_catalog_book 
-               where search_title like '%(chars)s%%%%'
-               group by substring(search_title,1,%(length)s) 
-               order by id"""%{'length':length,'chars':chars}
-      
-    items = Book.objects.raw(sql)
-          
+    items = prefix_groups(Book, len(chars) + 1, lang_code, chars)
+
     args['items']=items
     args['current'] = 'book'      
     args['lang_code'] = lang_code   
@@ -478,22 +465,8 @@ def AuthorsView(request):
         lang_code = 0
         chars = ''
         
-    length = len(chars)+1
-    if lang_code:
-        sql="""select %(length)s as l, substring(search_full_name,1,%(length)s) as id, count(*) as cnt 
-               from opds_catalog_author 
-               where lang_code=%(lang_code)s and search_full_name like '%(chars)s%%%%'
-               group by substring(search_full_name,1,%(length)s) 
-               order by id"""%{'length':length, 'lang_code':lang_code, 'chars':chars}
-    else:
-        sql="""select %(length)s as l, substring(search_full_name,1,%(length)s) as id, count(*) as cnt 
-               from opds_catalog_author 
-               where search_full_name like '%(chars)s%%%%'
-               group by substring(search_full_name,1,%(length)s) 
-               order by id"""%{'length':length,'chars':chars}
-      
-    items = Author.objects.raw(sql)
-          
+    items = prefix_groups(Author, len(chars) + 1, lang_code, chars)
+
     args['items']=items
     args['current'] = 'author'      
     args['lang_code'] = lang_code   
@@ -515,22 +488,8 @@ def SeriesView(request):
         lang_code = 0
         chars = ''
         
-    length = len(chars)+1
-    if lang_code:
-        sql="""select %(length)s as l, substring(search_ser,1,%(length)s) as id, count(*) as cnt 
-               from opds_catalog_series 
-               where lang_code=%(lang_code)s and search_ser like '%(chars)s%%%%'
-               group by substring(search_ser,1,%(length)s)
-               order by id"""%{'length':length, 'lang_code':lang_code, 'chars':chars}
-    else:
-        sql="""select %(length)s as l, substring(search_ser,1,%(length)s) as id, count(*) as cnt 
-               from opds_catalog_series 
-               where search_ser like '%(chars)s%%%%'
-               group by substring(search_ser,1,%(length)s) 
-               order by id"""%{'length':length,'chars':chars}
-      
-    items = Series.objects.raw(sql)
-          
+    items = prefix_groups(Series, len(chars) + 1, lang_code, chars)
+
     args['items']=items
     args['current'] = 'series'      
     args['lang_code'] = lang_code   
