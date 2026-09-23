@@ -101,9 +101,17 @@ class opdsScanner:
         self.zip_file = None
         self.rel_path = None     
                     
+        root = config.SOPDS_ROOT_LIB
+        # Fail before changing availability when the library cannot be opened.
+        with os.scandir(root):
+            pass
+
+        def fail_on_walk_error(error):
+            raise error
+
         opdsdb.avail_check_prepare()
             
-        for full_path, dirs, files in os.walk(config.SOPDS_ROOT_LIB, followlinks=True):
+        for full_path, dirs, files in os.walk(root, followlinks=True, onerror=fail_on_walk_error):
             # Если разрешена обработка inpx, то при нахождении inpx обрабатываем его и прекращаем обработку текущего каталога
             if config.SOPDS_INPX_ENABLE:
                 inpx_files = [inpx for inpx in files if re.match('.*(.inpx|.INPX)$', inpx)]
