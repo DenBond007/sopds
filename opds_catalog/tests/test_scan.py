@@ -1,4 +1,7 @@
 import os
+import shutil
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from django.test import TestCase
 
@@ -34,7 +37,7 @@ class scanTestCase(TestCase):
         self.assertEqual(book.cat_type, 0)
         #self.assertGreaterEqual(book.registerdate, )
         self.assertEqual(book.docdate, "30.1.2011")
-        self.assertEqual(book.lang, "en")
+        self.assertEqual(book.lang, "Английский")
         self.assertEqual(book.title, "The Sanctuary Sparrow")
         self.assertEqual(book.search_title, "The Sanctuary Sparrow".upper())
         self.assertEqual(book.annotation, "")
@@ -73,7 +76,7 @@ class scanTestCase(TestCase):
         self.assertEqual(book.cat_type, 0)
         #self.assertGreaterEqual(book.registerdate, )
         self.assertEqual(book.docdate, "2015")
-        self.assertEqual(book.lang, "ru")
+        self.assertEqual(book.lang, "Русский")
         self.assertEqual(book.title, "У меня девять жизней (шф (продолжатели))")
         self.assertEqual(book.search_title, "У меня девять жизней (шф (продолжатели))".upper())
         self.assertEqual(book.annotation, "Собрание произведений. Том 2")
@@ -116,6 +119,19 @@ class scanTestCase(TestCase):
 
         self.assertEqual(book.authors.count(), 1)
         self.assertEqual(book.authors.get(full_name="Cook Robin").search_full_name, "COOK ROBIN")
+
+    def test_custom_language_name(self):
+        with TemporaryDirectory() as root:
+            source = Path(self.test_ROOTLIB, self.test_fb2)
+            target = Path(root, self.test_fb2)
+            shutil.copyfile(source, target)
+            Path(root, 'Languages.txt').write_text('{"EN": "Custom English"}', encoding='utf-8')
+            config.SOPDS_ROOT_LIB = root
+
+            scanner = opdsScanner()
+            scanner.processfile(self.test_fb2, root, str(target), None, 0, target.stat().st_size)
+            book = Book.objects.get(filename=self.test_fb2)
+            self.assertEqual(book.lang, 'Custom English')
 
     def test_processzip(self):
         """ Тестирование процедуры processzip (извлекает метаданные из книг, помещенных в архив и помещает их БД) """
