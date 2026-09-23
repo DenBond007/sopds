@@ -6,6 +6,7 @@ import base64
 import io
 import subprocess
 import tempfile
+from pathlib import Path
 
 from django.http import HttpResponse, Http404
 from django.views.decorators.cache import cache_page
@@ -22,6 +23,24 @@ from PIL import Image
 
 from opds_catalog.middleware import BasicAuthMiddleware
 
+def resolve_book_source_path(book):
+    try:
+        root = Path(config.SOPDS_ROOT_LIB).resolve(strict=True)
+        source = Path(root, book.path)
+        if book.cat_type == opdsdb.CAT_NORMAL:
+            source = source / book.filename
+        elif book.cat_type == opdsdb.CAT_INP:
+            source = source.parent.parent.parent / source.name
+        elif book.cat_type != opdsdb.CAT_ZIP:
+            raise Http404
+        source = source.resolve(strict=True)
+        if not source.is_relative_to(root) or not source.is_file():
+            raise Http404
+    except (OSError, RuntimeError):
+        raise Http404
+    return str(source)
+
+
 def getFileName(book):
     if config.SOPDS_TITLE_AS_FILENAME:
         transname = utils.translit(book.title + '.' + book.format)
@@ -32,13 +51,7 @@ def getFileName(book):
 
 
 def getFileData(book):
-    full_path = os.path.join(config.SOPDS_ROOT_LIB, book.path)
-    if book.cat_type==opdsdb.CAT_INP:
-        # Убираем из пути INPX и INP файл
-        inp_path, zip_name = os.path.split(full_path)
-        inpx_path, inp_name = os.path.split(inp_path)
-        path, inpx_name = os.path.split(inpx_path)
-        full_path = os.path.join(path,zip_name)
+    full_path = resolve_book_source_path(book)
 
     z = None
     fz = None
@@ -46,7 +59,7 @@ def getFileData(book):
     fo = None
 
     if book.cat_type==opdsdb.CAT_NORMAL:
-        file_path=os.path.join(full_path, book.filename)
+        file_path = full_path
         try:
             fo=codecs.open(file_path, "rb")
             #s = fo.read()
@@ -156,14 +169,7 @@ def Download(request, book_id, zip_flag):
         if request.user.is_authenticated:
             bookshelf.objects.get_or_create(user=request.user, book=book)
             
-    full_path=os.path.join(config.SOPDS_ROOT_LIB,book.path)
-    
-    if book.cat_type==opdsdb.CAT_INP:
-        # Убираем из пути INPX и INP файл
-        inp_path, zip_name = os.path.split(full_path)
-        inpx_path, inp_name = os.path.split(inp_path)
-        path, inpx_name = os.path.split(inpx_path)
-        full_path = os.path.join(path,zip_name)
+    full_path = resolve_book_source_path(book)
         
     if config.SOPDS_TITLE_AS_FILENAME:
         transname=utils.translit(book.title+'.'+book.format)
@@ -189,7 +195,7 @@ def Download(request, book_id, zip_flag):
     s = None
     book_size = book.filesize
     if book.cat_type==opdsdb.CAT_NORMAL:
-        file_path=os.path.join(full_path, book.filename)
+        file_path = full_path
         book_size=os.path.getsize(file_path)
         try:
             fo=codecs.open(file_path, "rb")
@@ -225,16 +231,10 @@ def Download(request, book_id, zip_flag):
     return response
 
 def get_book_content(book):                                                                                                            
-    full_path = os.path.join(config.SOPDS_ROOT_LIB, book.path)                                                                         
-                                                                                                                                       
-    if book.cat_type == opdsdb.CAT_INP:                                                                                                
-        inp_path, zip_name = os.path.split(full_path)                                                                                  
-        inpx_path, inp_name = os.path.split(inp_path)                                                                                  
-        path, inpx_name = os.path.split(inpx_path)                                                                                     
-        full_path = os.path.join(path, zip_name)                                                                                       
+    full_path = resolve_book_source_path(book)
                                                                                                                                        
     if book.cat_type == opdsdb.CAT_NORMAL:                                                                                             
-        file_path = os.path.join(full_path, book.filename)                                                                             
+        file_path = full_path
                                                                                                                                        
         try:                                                                                                                           
             with open(file_path, "rb") as fo:                                                                                          
@@ -331,17 +331,11 @@ def Cover(request, book_id, thumbnail=False):
     """ Загрузка обложки """
     book = Book.objects.get(id=book_id)
     response = HttpResponse()
-    full_path = os.path.join(config.SOPDS_ROOT_LIB, book.path)
-    if book.cat_type == opdsdb.CAT_INP:
-        # Убираем из пути INPX и INP файл
-        inp_path, zip_name = os.path.split(full_path)
-        inpx_path, inp_name = os.path.split(inp_path)
-        path, inpx_name = os.path.split(inpx_path)
-        full_path = os.path.join(path,zip_name)
+    full_path = resolve_book_source_path(book)
 
     try:
         if book.cat_type == opdsdb.CAT_NORMAL:
-            file_path = os.path.join(full_path, book.filename)
+            file_path = full_path
             fo = codecs.open(file_path, "rb")
             book_data = create_bookfile(fo,book.filename)
             image = book_data.extract_cover_memory()
@@ -388,18 +382,12 @@ def Cover0(request, book_id, thumbnail = False):
     book = Book.objects.get(id=book_id)
     response = HttpResponse()
     c0=0
-    full_path=os.path.join(config.SOPDS_ROOT_LIB,book.path)
-    if book.cat_type==opdsdb.CAT_INP:
-        # Убираем из пути INPX и INP файл
-        inp_path, zip_name = os.path.split(full_path)
-        inpx_path, inp_name = os.path.split(inp_path)
-        path, inpx_name = os.path.split(inpx_path)
-        full_path = os.path.join(path,zip_name)
+    full_path = resolve_book_source_path(book)
          
     if book.format=='fb2':        
         fb2=fb2parse.fb2parser(1)
         if book.cat_type==opdsdb.CAT_NORMAL:
-            file_path=os.path.join(full_path,book.filename)
+            file_path = full_path
             fo=codecs.open(file_path, "rb")
             fb2.parse(fo,0)
             fo.close()
@@ -455,13 +443,7 @@ def ConvertFB2(request, book_id, convert_type):
     if config.SOPDS_AUTH and request.user.is_authenticated:
         bookshelf.objects.get_or_create(user=request.user, book=book)
 
-    full_path=os.path.join(config.SOPDS_ROOT_LIB,book.path)
-    if book.cat_type==opdsdb.CAT_INP:
-        # Убираем из пути INPX и INP файл
-        inp_path, zip_name = os.path.split(full_path)
-        inpx_path, inp_name = os.path.split(inp_path)
-        path, inpx_name = os.path.split(inpx_path)
-        full_path = os.path.join(path,zip_name)
+    full_path = resolve_book_source_path(book)
             
     if config.SOPDS_TITLE_AS_FILENAME:
         transname=utils.translit(book.title+'.'+book.format).replace("/","_")
@@ -481,7 +463,7 @@ def ConvertFB2(request, book_id, convert_type):
 
     if book.cat_type==opdsdb.CAT_NORMAL:
         tmp_fb2_path=None
-        file_path=os.path.join(full_path, book.filename)
+        file_path = full_path
     elif book.cat_type in [opdsdb.CAT_ZIP, opdsdb.CAT_INP]:
         try:
             fz=codecs.open(full_path, "rb")
