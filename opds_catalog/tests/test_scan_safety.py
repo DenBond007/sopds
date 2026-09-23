@@ -429,6 +429,39 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(catalog.source_mtime_ns, original_mtime)
         self.assertEqual(scanner.bad_archives, 1)
 
+    def test_oversize_changed_inpx_keeps_existing_book_and_shelf(self):
+        fields = ['Doe, Jane', 'fantasy', 'Old Name', '', '', '123', '100',
+                  'id', '', 'fb2', '2020-01-01', 'en']
+        with TemporaryDirectory() as root:
+            target = Path(root, 'index.inpx')
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_INPX_ENABLE = True
+            config.SOPDS_INPX_SKIP_UNCHANGED = True
+            config.SOPDS_INPX_TEST_ZIP = False
+            config.SOPDS_INPX_TEST_FILES = False
+            with zipfile.ZipFile(target, 'w') as archive:
+                archive.writestr('books.inp', '\x04'.join(fields).encode() + b'\n')
+            opdsScanner().scan_all()
+            book = Book.objects.get(filename='123.fb2')
+            catalog = book.catalog.parent.parent
+            original_mtime = catalog.source_mtime_ns
+            user = User.objects.create_user('oversize_inpx', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=book)
+
+            with zipfile.ZipFile(target, 'w') as archive:
+                archive.writestr('books.inp', b'x' * 129 + b'\n')
+            with patch('opds_catalog.inpx_parser.MAX_INP_LINE_BYTES', 128):
+                scanner = opdsScanner()
+                scanner.scan_all()
+
+        book.refresh_from_db()
+        catalog.refresh_from_db()
+        self.assertEqual(book.title, 'Old Name')
+        self.assertEqual(book.avail, 2)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+        self.assertEqual(catalog.source_mtime_ns, original_mtime)
+        self.assertEqual(scanner.bad_archives, 1)
+
 
 class ScannerConcurrencyTests(TransactionTestCase):
     def test_interrupted_scan_keeps_old_books_until_successful_retry(self):

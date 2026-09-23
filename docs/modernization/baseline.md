@@ -486,3 +486,13 @@ M04.8d: ViewHtml возвращал буферизованный `HttpResponse` 
 Django нет; test-БД удалена. Сам HTML-конвертер всё ещё разбирает XML в
 отдельном процессе целиком. Логи: `.local/logs/m04-html-stream-before.log`,
 `m04-html-stream-targeted-final2.log`, `m04-html-stream-general.log`.
+
+M04.8e: при ошибке callback INPX оставлял открытыми архив и INP-член;
+`structure.info` и строка INP читались без предела (3 ожидаемых падения,
+exit 1). Теперь оба ресурса и проверки ZIP-книги закрываются контекстными
+менеджерами; `structure.info` ограничен 64 КиБ, строка INP — 1 МиБ.
+Превышение вызывает `ValueError`, существующая транзакция scan сохраняет
+старую книгу, ID, полку и маркер архива. Адресные 4/4 и общие 104/104
+тестов прошли, exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-inpx-before.log`, `m04-inpx-targeted-final.log`,
+`m04-inpx-general.log`.
