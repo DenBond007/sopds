@@ -24,6 +24,9 @@ from constance import config
 class ArchiveScanError(Exception):
     pass
 
+
+MAX_SCANNED_ARCHIVE_BOOK_BYTES = 128 * 1024 * 1024
+
 class opdsScanner:
     def __init__(self, logger=None):
         self.fb2parser=None
@@ -259,8 +262,12 @@ class opdsScanner:
                         cat = opdsdb.addcattree(rel_file, opdsdb.CAT_ZIP, zsize)
                         for n in z.namelist():
                             self.logger.debug('Start process ZIP file = '+file+' book file = '+n)
+                            member_size = z.getinfo(n).file_size
+                            if (os.path.splitext(n)[1].lower() in config.SOPDS_BOOK_EXTENSIONS.split()
+                                    and member_size > MAX_SCANNED_ARCHIVE_BOOK_BYTES):
+                                raise ArchiveScanError('Book exceeds ZIP scan size limit')
                             with z.open(n) as bookfile:
-                                self.processfile(n,file,bookfile,cat,opdsdb.CAT_ZIP,z.getinfo(n).file_size)
+                                self.processfile(n,file,bookfile,cat,opdsdb.CAT_ZIP,member_size)
                         if self.bad_books != initial_bad_books:
                             raise ArchiveScanError('Book parse error')
                         cat.cat_size = zsize

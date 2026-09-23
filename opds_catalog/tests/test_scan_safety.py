@@ -13,6 +13,7 @@ from django.db import connection, connections
 from django.test import TestCase, TransactionTestCase
 
 from constance import config
+from book_tools.format import create_bookfile
 from opds_catalog import opdsdb
 from opds_catalog.models import Book, Catalog, bookshelf
 from opds_catalog.management.commands.sopds_scanner import Command as ScannerCommand, SCAN_LOCK_KEYS
@@ -333,6 +334,40 @@ class ScanDataSafetyTests(TestCase):
             scanner = opdsScanner()
             scanner.scan_all()
 
+        book.refresh_from_db()
+        catalog.refresh_from_db()
+        self.assertEqual(book.title, 'The Sanctuary Sparrow')
+        self.assertEqual(book.avail, 2)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+        self.assertEqual(catalog.source_mtime_ns, original_mtime)
+        self.assertEqual(scanner.bad_archives, 1)
+
+    def test_oversize_zip_member_is_not_parsed_and_keeps_existing_shelf(self):
+        source = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            target = Path(root, 'books.zip')
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_ZIPSCAN = True
+            with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr(source.name, source.read_bytes())
+            opdsScanner().scan_all()
+            book = Book.objects.get(filename=source.name)
+            catalog = book.catalog
+            original_mtime = catalog.source_mtime_ns
+            user = User.objects.create_user('oversize_zip', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=book)
+
+            with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr(source.name, source.read_bytes())
+                archive.writestr('huge.fb2', b'x' * 500001)
+            with patch('opds_catalog.sopdscan.MAX_SCANNED_ARCHIVE_BOOK_BYTES', 500000,
+                       create=True), \
+                 patch('opds_catalog.sopdscan.create_bookfile',
+                       wraps=create_bookfile) as parse:
+                scanner = opdsScanner()
+                scanner.scan_all()
+
+        self.assertEqual(parse.call_count, 1)
         book.refresh_from_db()
         catalog.refresh_from_db()
         self.assertEqual(book.title, 'The Sanctuary Sparrow')
