@@ -1,5 +1,6 @@
 import io
 import shutil
+import time
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -14,6 +15,45 @@ from opds_catalog.dl import ConvertFB2, getFileDataConv
 
 
 class ConverterSafetyTests(TestCase):
+    def test_timeout_stops_converter_and_removes_its_temporary_files(self):
+        with TemporaryDirectory() as parent:
+            temporary = Path(parent, 'temporary')
+            temporary.mkdir()
+            converter = Path(parent, 'slow-converter')
+            converter.write_text('#!/bin/sh\ncp "$1" "$2"\nsleep 2\n')
+            converter.chmod(0o700)
+            config.SOPDS_TEMP_DIR = str(temporary)
+            config.SOPDS_FB2TOEPUB = str(converter)
+            book = SimpleNamespace(format='fb2', filename='fixture.fb2')
+
+            started = time.monotonic()
+            with patch('opds_catalog.dl.getFileData', return_value=io.BytesIO(b'book')):
+                with patch('opds_catalog.dl.CONVERTER_TIMEOUT_SECONDS', 0.1,
+                           create=True):
+                    result = getFileDataConv(book, 'epub')
+            elapsed = time.monotonic() - started
+
+            self.assertIsNone(result)
+            self.assertLess(elapsed, 1.0)
+            self.assertEqual(list(temporary.iterdir()), [])
+
+    def test_failed_converter_does_not_serve_partial_output(self):
+        with TemporaryDirectory() as parent:
+            temporary = Path(parent, 'temporary')
+            temporary.mkdir()
+            converter = Path(parent, 'failed-converter')
+            converter.write_text('#!/bin/sh\ncp "$1" "$2"\nexit 7\n')
+            converter.chmod(0o700)
+            config.SOPDS_TEMP_DIR = str(temporary)
+            config.SOPDS_FB2TOEPUB = str(converter)
+            book = SimpleNamespace(format='fb2', filename='fixture.fb2')
+
+            with patch('opds_catalog.dl.getFileData', return_value=io.BytesIO(b'book')):
+                result = getFileDataConv(book, 'epub')
+
+            self.assertIsNone(result)
+            self.assertEqual(list(temporary.iterdir()), [])
+
     def test_helper_preserves_file_outside_temporary_directory(self):
         with TemporaryDirectory() as parent:
             temporary = Path(parent, 'temporary')

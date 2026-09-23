@@ -6,6 +6,7 @@ import base64
 import io
 import subprocess
 import tempfile
+import signal
 from pathlib import Path
 
 from django.http import HttpResponse, Http404
@@ -22,6 +23,8 @@ from constance import config
 from PIL import Image
 
 from opds_catalog.middleware import BasicAuthMiddleware
+
+CONVERTER_TIMEOUT_SECONDS = 300
 
 def resolve_book_source_path(book):
     try:
@@ -120,9 +123,20 @@ def getFileDataConv(book, convert_type):
         with open(source_path, 'wb') as source_file:
             source_file.write(book_data.read())
         proc = subprocess.Popen(
-            [converter_path, source_path, output_path], stdout=subprocess.PIPE
+            [converter_path, source_path, output_path], stdout=subprocess.PIPE,
+            start_new_session=True,
         )
-        proc.communicate()
+        try:
+            proc.communicate(timeout=CONVERTER_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.communicate()
+            return None
+        if proc.returncode != 0:
+            return None
         if not os.path.isfile(output_path):
             return None
         with open(output_path, 'rb') as output_file:
