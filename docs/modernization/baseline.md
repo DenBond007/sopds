@@ -477,3 +477,12 @@ ViewHtml теперь вызывает скрипт из checkout через т�
 test-БД удалена. HTML-ответ по-прежнему собирается в памяти. Логи:
 `.local/logs/m04-html-before.log`, `m04-html-targeted-final.log`,
 `m04-html-general.log`.
+
+M04.8d: ViewHtml возвращал буферизованный `HttpResponse` (2 ожидаемых
+падения `response.streaming=False`, exit 1). Теперь готовый HTML копируется
+порциями во временный файл с сохранением вставки стиля и возвращается через
+`FileResponse`. Тест проверил `</head>` на границе порций; обычная и ZIP FB2
+вернули прежние название и стиль. Общий набор 100/100, exit 0, замечаний
+Django нет; test-БД удалена. Сам HTML-конвертер всё ещё разбирает XML в
+отдельном процессе целиком. Логи: `.local/logs/m04-html-stream-before.log`,
+`m04-html-stream-targeted-final2.log`, `m04-html-stream-general.log`.

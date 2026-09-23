@@ -30,6 +30,23 @@ from opds_catalog.middleware import BasicAuthMiddleware
 CONVERTER_TIMEOUT_SECONDS = 300
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
 MAX_COVER_SOURCE_BYTES = 32 * 1024 * 1024
+HTML_HEAD_STYLE = b'''
+            <style>
+            body {
+                max-width: 900px;
+                margin: auto;
+                padding: 20px;
+                font-size: 1.1rem;
+                line-height: 1.6;
+                color: #ddd;
+                background-color: #1b1b1b;
+            }
+
+            a {
+                color: #8ecfff;
+            }
+            </style>
+            </head>'''
 
 
 def _cover_bookfile(reader, filename):
@@ -37,6 +54,21 @@ def _cover_bookfile(reader, filename):
     if len(source) > MAX_COVER_SOURCE_BYTES:
         raise ValueError('book is too large to parse for a cover')
     return create_bookfile(io.BytesIO(source), filename)
+
+
+def _write_styled_html(reader, writer):
+    needle = b'</head>'
+    pending = b''
+    while chunk := reader.read(DOWNLOAD_CHUNK_SIZE):
+        parts = (pending + chunk).split(needle)
+        for part in parts[:-1]:
+            writer.write(part)
+            writer.write(HTML_HEAD_STYLE)
+        pending = parts[-1]
+        if len(pending) >= len(needle):
+            writer.write(pending[:-(len(needle) - 1)])
+            pending = pending[-(len(needle) - 1):]
+    writer.write(pending)
 
 def resolve_book_source_path(book):
     try:
@@ -306,32 +338,15 @@ def ViewHtml(request, book_id):
         if proc.returncode != 0 or not html_path.is_file():
             raise Http404
 
-        with html_path.open('r', encoding='utf-8') as output_file:
-            html = output_file.read()
-        html = html.replace(
-            "</head>",
-            """
-            <style>
-            body {
-                max-width: 900px;
-                margin: auto;
-                padding: 20px;
-                font-size: 1.1rem;
-                line-height: 1.6;
-                color: #ddd;
-                background-color: #1b1b1b;
-            }
-
-            a {
-                color: #8ecfff;
-            }
-            </style>
-            </head>
-            """
-        )
-            
-                                                                                                                                       
-        return HttpResponse(html, content_type="text/html; charset=utf-8")
+        response_file = tempfile.TemporaryFile(mode='w+b')
+        try:
+            with html_path.open('rb') as output_file:
+                _write_styled_html(output_file, response_file)
+            response_file.seek(0)
+            return FileResponse(response_file, content_type='text/html; charset=utf-8')
+        except BaseException:
+            response_file.close()
+            raise
 
 # Новая версия (0.42) процедуры извлечения обложек из файлов книг fb2, epub, mobi
 @cache_page(config.SOPDS_CACHE_TIME)

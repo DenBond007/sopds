@@ -1,4 +1,5 @@
 import zipfile
+from io import BytesIO
 from subprocess import TimeoutExpired
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,10 +9,19 @@ from django.test import TestCase
 from django.urls import reverse
 
 from constance import config
-from opds_catalog import opdsdb
+from opds_catalog import dl, opdsdb
 
 
 class ViewHtmlTests(TestCase):
+    def test_style_insertion_crosses_read_boundary(self):
+        source = b'<html><head></head><body>book</body></html>'
+        output = BytesIO()
+        with patch('opds_catalog.dl.DOWNLOAD_CHUNK_SIZE', 3):
+            dl._write_styled_html(BytesIO(source), output)
+        self.assertEqual(
+            output.getvalue(), source.replace(b'</head>', dl.HTML_HEAD_STYLE)
+        )
+
     def test_converter_timeout_cleans_workdir(self):
         with TemporaryDirectory() as root:
             library = Path(root, 'library')
@@ -58,7 +68,10 @@ class ViewHtmlTests(TestCase):
             response = self.client.get(reverse('opds_catalog:view_html',
                                                kwargs={'book_id': book.pk}))
 
-            self.assertContains(response, 'The Sanctuary Sparrow')
+            self.assertTrue(response.streaming)
+            html = b''.join(response.streaming_content).decode('utf-8')
+            self.assertIn('The Sanctuary Sparrow', html)
+            self.assertIn('background-color: #1b1b1b', html)
             self.assertEqual(list(workdir.iterdir()), [])
 
     def test_zip_fb2_uses_native_converter_and_cleans_temp_files(self):
@@ -81,5 +94,8 @@ class ViewHtmlTests(TestCase):
             response = self.client.get(reverse('opds_catalog:view_html',
                                                kwargs={'book_id': book.pk}))
 
-            self.assertContains(response, 'The Sanctuary Sparrow')
+            self.assertTrue(response.streaming)
+            html = b''.join(response.streaming_content).decode('utf-8')
+            self.assertIn('The Sanctuary Sparrow', html)
+            self.assertIn('background-color: #1b1b1b', html)
             self.assertEqual(list(workdir.iterdir()), [])
