@@ -7,7 +7,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 
 from django.core.management.base import BaseCommand
-from django.db import transaction, connection, connections
+from django.db import transaction, connection
 from django.conf import settings as main_settings
 
 from opds_catalog.models import Counter
@@ -15,6 +15,8 @@ from opds_catalog.sopdscan import opdsScanner
 #from opds_catalog.settings import SCANNER_LOG, SCAN_SHED_DAY, SCAN_SHED_DOW, SCAN_SHED_HOUR, SCAN_SHED_MIN, LOGLEVEL, SCANNER_PID
 from opds_catalog import settings 
 from constance import config
+
+SCAN_LOCK_KEYS = (0x534F5044, 0x5343414E)  # "SOPD", "SCAN"
 
 class Command(BaseCommand):
     help = 'Scan Books Collection.'
@@ -69,18 +71,31 @@ class Command(BaseCommand):
         if self.scan_is_active:
             self.stdout.write('Scan process already active. Skip currend job.')
             return
-        
+
         self.scan_is_active = True
-        
-        if connection.connection and not connection.is_usable():
-            del(connections._connections.default)
-                
-        scanner=opdsScanner(self.logger)
-        with transaction.atomic():
-            scanner.scan_all()
-        Counter.objects.update_known_counters()  
-        self.scan_is_active = False
-        
+        lock_acquired = False
+        try:
+            if connection.connection and not connection.is_usable():
+                connection.close()
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT pg_try_advisory_lock(%s, %s)', SCAN_LOCK_KEYS)
+                lock_acquired = cursor.fetchone()[0]
+            if not lock_acquired:
+                self.stdout.write('Another scan process is active. Skip current job.')
+                return
+
+            scanner = opdsScanner(self.logger)
+            with transaction.atomic():
+                scanner.scan_all()
+            Counter.objects.update_known_counters()
+        finally:
+            try:
+                if lock_acquired:
+                    with connection.cursor() as cursor:
+                        cursor.execute('SELECT pg_advisory_unlock(%s, %s)', SCAN_LOCK_KEYS)
+            finally:
+                self.scan_is_active = False
+
     def update_shedule(self):
         self.SCAN_SHED_DAY = config.SOPDS_SCAN_SHED_DAY
         self.SCAN_SHED_DOW = config.SOPDS_SCAN_SHED_DOW
@@ -91,7 +106,7 @@ class Command(BaseCommand):
     
     def check_settings(self):
         if connection.connection and not connection.is_usable():
-            del(connections._connections.default)        
+            connection.close()
         settings.constance_update_all()
         if not (self.SCAN_SHED_MIN==config.SOPDS_SCAN_SHED_MIN and \
            self.SCAN_SHED_HOUR==config.SOPDS_SCAN_SHED_HOUR and \

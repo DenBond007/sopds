@@ -1,17 +1,20 @@
 import os
 import logging
 import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.db import connection, connections
+from django.test import TestCase, TransactionTestCase
 
 from constance import config
 from opds_catalog import opdsdb
 from opds_catalog.models import Book, Catalog, bookshelf
-from opds_catalog.management.commands.sopds_scanner import Command as ScannerCommand
+from opds_catalog.management.commands.sopds_scanner import Command as ScannerCommand, SCAN_LOCK_KEYS
 from opds_catalog.sopdscan import opdsScanner
 
 
@@ -121,3 +124,81 @@ class ScanDataSafetyTests(TestCase):
 
         self.assertEqual(Book.objects.get(pk=book.pk).avail, 2)
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+
+
+class ScannerConcurrencyTests(TransactionTestCase):
+    def test_second_command_skips_while_first_scan_is_running(self):
+        entered = threading.Event()
+        release = threading.Event()
+        second_started = threading.Event()
+        calls = []
+
+        def slow_scan(_scanner):
+            calls.append(threading.get_ident())
+            entered.set()
+            release.wait(timeout=5)
+
+        def scan_in_thread(command):
+            try:
+                command.scan()
+            finally:
+                connections.close_all()
+
+        def second_scan(command):
+            second_started.set()
+            scan_in_thread(command)
+
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            first = ScannerCommand()
+            second = ScannerCommand()
+            first.logger = second.logger = logging.getLogger('scan-concurrency-test')
+            with patch('opds_catalog.sopdscan.opdsScanner.scan_all', slow_scan), \
+                 patch('opds_catalog.management.commands.sopds_scanner.Counter.objects.update_known_counters'):
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    first_job = executor.submit(scan_in_thread, first)
+                    self.assertTrue(entered.wait(timeout=2))
+                    second_job = executor.submit(second_scan, second)
+                    self.assertTrue(second_started.wait(timeout=2))
+                    skipped_before_release = False
+                    try:
+                        second_job.result(timeout=2)
+                        skipped_before_release = True
+                    except TimeoutError:
+                        pass
+                    finally:
+                        release.set()
+                    first_job.result(timeout=2)
+                    second_job.result(timeout=2)
+
+        self.assertTrue(skipped_before_release)
+        self.assertEqual(len(calls), 1)
+
+    def test_failed_scan_releases_lock_and_allows_retry(self):
+        def probe_lock():
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT pg_try_advisory_lock(%s, %s)', SCAN_LOCK_KEYS)
+                    acquired = cursor.fetchone()[0]
+                    if acquired:
+                        cursor.execute('SELECT pg_advisory_unlock(%s, %s)', SCAN_LOCK_KEYS)
+                return acquired
+            finally:
+                connections.close_all()
+
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            command = ScannerCommand()
+            command.logger = logging.getLogger('scan-lock-test')
+            with patch('opds_catalog.sopdscan.opdsScanner.scan_all', side_effect=PermissionError):
+                with self.assertRaises(PermissionError):
+                    command.scan()
+
+            self.assertFalse(command.scan_is_active)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                self.assertTrue(executor.submit(probe_lock).result(timeout=2))
+
+            with patch('opds_catalog.sopdscan.opdsScanner.scan_all') as scan, \
+                 patch('opds_catalog.management.commands.sopds_scanner.Counter.objects.update_known_counters'):
+                command.scan()
+                scan.assert_called_once()
