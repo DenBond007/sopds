@@ -24,7 +24,7 @@
 	<td>
 	<a href="{% url "web:searchbooks" %}?searchtype=i&searchterms={{b.id}}"> 
 	{{ b.title }} 
-	{% if b.authors.count > 0 %}
+	{% if b.authors %}
 	   ({% for a in b.authors %}{{a.full_name}}{% if not forloop.last %}, {%endif%}{%endfor%})
 	{% endif %}
 	</a>

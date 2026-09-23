@@ -10,6 +10,30 @@ from opds_catalog.models import Author
 
 
 class WebQueryTests(TestCase):
+    def test_catalog_fetches_authors_once_for_page(self):
+        config.SOPDS_AUTH = False
+        config.SOPDS_MAXITEMS = 60
+        catalog = opdsdb.addcattree('.')
+        author = opdsdb.addauthor('Page Author')
+        for index in range(5):
+            book = opdsdb.addbook(
+                f'book-{index}.fb2', '.', catalog, 'fb2',
+                f'Book {index}', '', '', 'en', 10,
+            )
+            opdsdb.addbauthor(book, author)
+
+        with CaptureQueriesContext(connection) as captured:
+            response = self.client.get(reverse('web:catalog'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Page Author', count=5)
+        author_queries = [
+            query['sql'] for query in captured
+            if 'OPDS_CATALOG_BAUTHOR' in query['sql'].upper()
+            and query['sql'].lstrip().upper().startswith('SELECT')
+        ]
+        self.assertLessEqual(len(author_queries), 1)
+
     def test_opds_author_search_does_not_count_books_per_entry(self):
         config.SOPDS_AUTH = False
         config.SOPDS_MAXITEMS = 60

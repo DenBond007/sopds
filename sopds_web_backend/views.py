@@ -389,9 +389,8 @@ def CatalogsView(request):
     
     catalogs_list = Catalog.objects.filter(parent=cat).order_by("cat_name")
     catalogs_count = catalogs_list.count()
-    # prefetch_related on sqlite on items >999 therow error "too many SQL variables"
-    #books_list = Book.objects.filter(catalog=cat).prefetch_related('authors','genres','series').order_by("title")
-    books_list = Book.objects.filter(catalog=cat).order_by("search_title")
+    # Related authors are rendered for each book in the current page.
+    books_list = Book.objects.filter(catalog=cat).prefetch_related('authors').order_by("search_title")
     books_count = books_list.count()
     
     # Получаем результирующий список
@@ -407,7 +406,7 @@ def CatalogsView(request):
         p = {'is_catalog':0, 'lang_code': row.lang_code, 'filename': row.filename, 'path': row.path, 'shortpath': shortpath, \
               'registerdate': row.registerdate, 'id': row.id, 'annotation': strip_tags(row.annotation), \
               'docdate': row.docdate, 'lang': row.lang, 'format': row.format, 'title': row.title, 'filesize': row.filesize, \
-              'authors':row.authors.values(), 'genres':row.genres.values(), 'series':row.series.values(), 'ser_no':row.bseries_set.values('ser_no'),\
+              'authors':list(row.authors.all()), 'genres':row.genres.values(), 'series':row.series.values(), 'ser_no':row.bseries_set.values('ser_no'),\
               'readtime': row.bookshelf_set.filter(user=request.user).values('readtime') if config.SOPDS_AUTH else None
              }
         items.append(p)
