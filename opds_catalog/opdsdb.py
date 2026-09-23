@@ -111,7 +111,7 @@ def books_del_phisical():
     ).delete()
     return deleted_count
 
-def arc_skip(arcpath,arcsize):
+def arc_skip(arcpath,arcsize,source_mtime_ns):
     """
        Выясняем изменялся ли архив (ZIP или INP-файл)
        если нет, то пытаемся пропустить сканирование, устанавливая для всех книг из
@@ -127,10 +127,10 @@ def arc_skip(arcpath,arcsize):
     if catalog == None:
         return 0
     
-    # Если каталог в БД найден и его размер совпадает с текущим, то считаем что файл архива не менялся
+    # Если размер и время изменения совпадают, архив не менялся.
     # Поэтому делаем update всех книг из этого архива, однако если ни одного изменения не произошло, то
     # таких книг нет, поэтому видимо нужно пересканировать архив
-    if arcsize == catalog.cat_size:
+    if arcsize == catalog.cat_size and source_mtime_ns == catalog.source_mtime_ns:
         row_count = Book.objects.filter(path=arcpath).update(avail=2)
         return row_count 
     
@@ -155,7 +155,7 @@ def inp_skip(arcpath,arcsize):
     if catalog == None:
         return 0
 
-    # Если INPX в БД найден и его размер совпадает с текущим, то считаем что файл INPX не менялся
+    # Если размер и время изменения совпадают, INPX не менялся.
     # Поэтому делаем update всех книг из этого INPX, однако если ни одного изменения не произошло, то
     # таких книг нет, поэтому видимо нужно пересканировать архив
     if arcsize == catalog.cat_size:
@@ -167,7 +167,7 @@ def inp_skip(arcpath,arcsize):
     return 0
 
 
-def inpx_skip(arcpath, arcsize):
+def inpx_skip(arcpath, arcsize, source_mtime_ns):
     """
        Выясняем изменялся ли INPX-файл)
        если нет, то пытаемся пропустить сканирование, устанавливая для всех книг из
@@ -186,7 +186,7 @@ def inpx_skip(arcpath, arcsize):
     # Если INPX в БД найден и его размер совпадает с текущим, то считаем что файл INPX не менялся
     # Поэтому делаем update всех книг из этого INPX, однако если ни одного изменения не произошло, то
     # таких книг нет, поэтому видимо нужно пересканировать архив
-    if arcsize == catalog.cat_size:
+    if arcsize == catalog.cat_size and source_mtime_ns == catalog.source_mtime_ns:
         row_count = Book.objects.filter(catalog__parent__parent=catalog).update(avail=2)
         return row_count
 

@@ -6,6 +6,7 @@ import datetime
 import logging
 import re
 import json
+import zipfile as standard_zipfile
 
 from book_tools.format import create_bookfile
 from book_tools.format.util import strip_symbols
@@ -19,9 +20,13 @@ import opds_catalog.zipf as zipfile
 
 from constance import config
 
+class ArchiveScanError(Exception):
+    pass
+
 class opdsScanner:
     def __init__(self, logger=None):
         self.fb2parser=None
+        self.force_inp_rescan = False
         self.init_parser()
         
         self.fullang = None
@@ -145,12 +150,14 @@ class opdsScanner:
 
         self.rel_path=os.path.relpath(os.path.join(inpx,inp_file),config.SOPDS_ROOT_LIB)
         
-        if config.SOPDS_INPX_SKIP_UNCHANGED and opdsdb.inp_skip(self.rel_path,inp_size):
+        if config.SOPDS_INPX_SKIP_UNCHANGED and not self.force_inp_rescan and opdsdb.inp_skip(self.rel_path,inp_size):
             self.logger.info('Skip INP metafile '+inp_file+'. Not changed.')
             result = 1               
         else:    
             self.logger.info('Start process INP metafile = '+inp_file)
             self.inp_cat = opdsdb.addcattree(self.rel_path, opdsdb.CAT_INPX, inp_size)
+            self.inp_cat.cat_size = inp_size
+            self.inp_cat.save(update_fields=['cat_size'])
             result = 0
          
         return result
@@ -178,65 +185,91 @@ class opdsScanner:
 
         rel_path_current = os.path.join(self.rel_path,meta_data[inpx_parser.sFolder])
 
-        if opdsdb.findbook(name, rel_path_current, 1) == None:
-            cat = opdsdb.addcattree(rel_path_current, opdsdb.CAT_INP)
+        existing = opdsdb.findbook(name, rel_path_current, 1)
+        cat = opdsdb.addcattree(rel_path_current, opdsdb.CAT_INP)
+        if existing is None:
             book=opdsdb.addbook(name,rel_path_current,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP)
+        else:
+            book=opdsdb.updatebook(existing,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP)
+            book.authors.clear()
+            book.genres.clear()
+            book.series.clear()
+
+        for a in meta_data[inpx_parser.sAuthor]:
+            author=opdsdb.addauthor(a.replace(',',' '))
+            opdsdb.addbauthor(book,author)
+
+        for g in meta_data[inpx_parser.sGenre]:
+            opdsdb.addbgenre(book,opdsdb.addgenre(g.lower().strip(strip_symbols)))
+
+        for s in meta_data[inpx_parser.sSeries]:
+            ser=opdsdb.addseries(s.strip())
+            opdsdb.addbseries(book,ser,serno)
+
+        if existing is None:
             self.books_added+=1
-            self.books_in_archives+=1
-            self.logger.debug("Book "+rel_path_current+"/"+name+" Added ok.")
-
-            for a in meta_data[inpx_parser.sAuthor]:
-                author=opdsdb.addauthor(a.replace(',',' '))
-                opdsdb.addbauthor(book,author)
-
-            for g in meta_data[inpx_parser.sGenre]:
-                opdsdb.addbgenre(book,opdsdb.addgenre(g.lower().strip(strip_symbols)))
-
-            for s in meta_data[inpx_parser.sSeries]:
-                ser=opdsdb.addseries(s.strip())
-                opdsdb.addbseries(book,ser,serno)
+        else:
+            self.books_updated+=1
+        self.books_in_archives+=1
+        self.logger.debug("Book "+rel_path_current+"/"+name+" Processed ok.")
                    
     def processinpx(self,name,full_path,file):
         rel_file=os.path.relpath(file,config.SOPDS_ROOT_LIB)
-        inpx_size = os.path.getsize(file)
-        if config.SOPDS_INPX_SKIP_UNCHANGED and opdsdb.inpx_skip(rel_file,inpx_size):
+        inpx_stat = os.stat(file)
+        inpx_size = inpx_stat.st_size
+        if config.SOPDS_INPX_SKIP_UNCHANGED and opdsdb.inpx_skip(rel_file,inpx_size,inpx_stat.st_mtime_ns):
             self.logger.info('Skip INPX file = '+file+'. Not changed.')
         else:    
             self.logger.info('Start process INPX file = '+file)
-            opdsdb.addcattree(rel_file, opdsdb.CAT_INPX, inpx_size)
-            inpx = inpx_parser.Inpx(file, self.inpx_callback, self.inpskip_callback)       
-            inpx.INPX_TEST_ZIP = config.SOPDS_INPX_TEST_ZIP  
-            inpx.INPX_TEST_FILES = config.SOPDS_INPX_TEST_FILES 
-            inpx.parse()
+            initial_counts = (self.books_added, self.books_updated, self.books_in_archives)
+            self.force_inp_rescan = True
+            try:
+                with transaction.atomic():
+                    cat = opdsdb.addcattree(rel_file, opdsdb.CAT_INPX, inpx_size)
+                    inpx = inpx_parser.Inpx(file, self.inpx_callback, self.inpskip_callback)
+                    inpx.INPX_TEST_ZIP = config.SOPDS_INPX_TEST_ZIP
+                    inpx.INPX_TEST_FILES = config.SOPDS_INPX_TEST_FILES
+                    inpx.parse()
+                    cat.cat_size = inpx_size
+                    cat.source_mtime_ns = inpx_stat.st_mtime_ns
+                    cat.save(update_fields=['cat_size', 'source_mtime_ns'])
+            except (standard_zipfile.BadZipFile, UnicodeDecodeError, ValueError) as err:
+                self.books_added, self.books_updated, self.books_in_archives = initial_counts
+                opdsdb.Book.objects.filter(catalog__parent__parent__path=rel_file, avail=1).update(avail=2)
+                self.bad_archives+=1
+                self.logger.warning('Error while reading INPX '+file+'; previous books kept. (Error: %s)' % err)
+            finally:
+                self.force_inp_rescan = False
 
     def processzip(self,name,full_path,file):
         rel_file=os.path.relpath(file,config.SOPDS_ROOT_LIB)
-        zsize = os.path.getsize(file)
-        if opdsdb.arc_skip(rel_file,zsize):
+        archive_stat = os.stat(file)
+        zsize = archive_stat.st_size
+        if opdsdb.arc_skip(rel_file,zsize,archive_stat.st_mtime_ns):
             self.arch_skipped+=1
             self.logger.debug('Skip ZIP archive '+rel_file+'. Already scanned.')
         else:                   
-            zip_process_error = 0
+            initial_bad_books = self.bad_books
+            initial_counts = (self.books_added, self.books_updated, self.books_in_archives)
             try:
-                z = zipfile.ZipFile(file, 'r', allowZip64=True)
-                filelist = z.namelist()
-                cat = opdsdb.addcattree(rel_file, opdsdb.CAT_ZIP, zsize)
-                for n in filelist:
-                    try:
-                        self.logger.debug('Start process ZIP file = '+file+' book file = '+n)
-                        file_size=z.getinfo(n).file_size
-                        bookfile = z.open(n)
-                        self.processfile(n,file,bookfile,cat,opdsdb.CAT_ZIP,file_size)
-                        bookfile.close()
-                    except zipfile.BadZipFile:
-                        self.logger.warning('Error processing ZIP file = '+file+' book file = '+n)
-                        zip_process_error = 1
-                z.close()
+                with transaction.atomic():
+                    with zipfile.ZipFile(file, 'r', allowZip64=True) as z:
+                        cat = opdsdb.addcattree(rel_file, opdsdb.CAT_ZIP, zsize)
+                        for n in z.namelist():
+                            self.logger.debug('Start process ZIP file = '+file+' book file = '+n)
+                            with z.open(n) as bookfile:
+                                self.processfile(n,file,bookfile,cat,opdsdb.CAT_ZIP,z.getinfo(n).file_size)
+                        if self.bad_books != initial_bad_books:
+                            raise ArchiveScanError('Book parse error')
+                        cat.cat_size = zsize
+                        cat.source_mtime_ns = archive_stat.st_mtime_ns
+                        cat.save(update_fields=['cat_size', 'source_mtime_ns'])
                 self.arch_scanned+=1
-            except zipfile.BadZipFile:
-                self.logger.warning('Error while read ZIP archive. File '+file+' corrupt.')
-                zip_process_error = 1
-            self.bad_archives+=zip_process_error
+            except (zipfile.BadZipFile, ArchiveScanError) as err:
+                self.books_added, self.books_updated, self.books_in_archives = initial_counts
+                opdsdb.Book.objects.filter(path=rel_file, avail=1).update(avail=2)
+                self.bad_archives+=1
+                self.logger.warning('Error while reading ZIP archive '+file+'; previous books kept. (Error: %s)' % err)
 
     def processfile(self,name,full_path,file,cat,archive=0,file_size=0):
         (n, e) = os.path.splitext(name)

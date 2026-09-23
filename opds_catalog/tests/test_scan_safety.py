@@ -2,6 +2,7 @@ import os
 import logging
 import shutil
 import threading
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -227,6 +228,175 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
         self.assertEqual(scanner.bad_books, 1)
         self.assertEqual(scanner.books_updated, 0)
+
+    def test_same_size_changed_zip_is_not_skipped(self):
+        source = Path(__file__).parent / 'data' / '262001.fb2'
+        original = source.read_bytes()
+        changed = original.replace(b'The Sanctuary Sparrow', b'The Sanctuary Panther', 1)
+        self.assertEqual(len(changed), len(original))
+
+        with TemporaryDirectory() as root:
+            target = Path(root, 'books.zip')
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_ZIPSCAN = True
+            for index, payload in enumerate((original, changed)):
+                with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED) as archive:
+                    archive.writestr(source.name, payload)
+                if index == 0:
+                    archive_size = target.stat().st_size
+                    archive_mtime = target.stat().st_mtime_ns
+                    opdsScanner().scan_all()
+                    book = Book.objects.get(filename=source.name)
+                    user = User.objects.create_user('changed_zip', password='test-password')
+                    shelf = bookshelf.objects.create(user=user, book=book)
+                else:
+                    self.assertEqual(target.stat().st_size, archive_size)
+                    os.utime(target, ns=(archive_mtime + 1_000_000_000,
+                                         archive_mtime + 1_000_000_000))
+                    opdsScanner().scan_all()
+            scanner = opdsScanner()
+            scanner.scan_all()
+
+        book.refresh_from_db()
+        self.assertEqual(book.title, 'The Sanctuary Panther')
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+        self.assertEqual(scanner.arch_skipped, 1)
+
+    def test_same_size_changed_inpx_is_not_skipped(self):
+        def inp_line(title, author, genre, series):
+            fields = [author, genre, title, series, '1', '123', '100',
+                      'id', '', 'fb2', '2020-01-01', 'en']
+            return '\x04'.join(fields).encode('utf-8') + b'\n'
+
+        with TemporaryDirectory() as root:
+            target = Path(root, 'index.inpx')
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_INPX_ENABLE = True
+            config.SOPDS_INPX_SKIP_UNCHANGED = True
+            config.SOPDS_INPX_TEST_ZIP = False
+            config.SOPDS_INPX_TEST_FILES = False
+            variants = (
+                ('Old Name', 'Doe, Jane', 'fantasy', 'Old Series'),
+                ('New Name', 'Roe, Mary', 'mystery', 'New Series'),
+            )
+            for title, author, genre, series in variants:
+                with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED) as archive:
+                    archive.writestr('books.inp', inp_line(title, author, genre, series))
+                if title == 'Old Name':
+                    archive_size = target.stat().st_size
+                    archive_mtime = target.stat().st_mtime_ns
+                    opdsScanner().scan_all()
+                    book = Book.objects.get(filename='123.fb2')
+                    original_registered = book.registerdate
+                    user = User.objects.create_user('changed_inpx', password='test-password')
+                    shelf = bookshelf.objects.create(user=user, book=book)
+                else:
+                    self.assertEqual(target.stat().st_size, archive_size)
+                    os.utime(target, ns=(archive_mtime + 1_000_000_000,
+                                         archive_mtime + 1_000_000_000))
+                    opdsScanner().scan_all()
+            scanner = opdsScanner()
+            scanner.scan_all()
+
+        book.refresh_from_db()
+        self.assertEqual(book.title, 'New Name')
+        self.assertEqual(book.registerdate, original_registered)
+        self.assertEqual(list(book.authors.values_list('full_name', flat=True)), ['Roe  Mary'])
+        self.assertEqual(list(book.genres.values_list('genre', flat=True)), ['mystery'])
+        self.assertEqual(list(book.series.values_list('ser', flat=True)), ['New Series'])
+        self.assertEqual(Book.objects.count(), 1)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+        self.assertEqual(scanner.books_updated, 0)
+
+    def test_corrupt_changed_zip_keeps_existing_book_and_shelf(self):
+        source = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            target = Path(root, 'books.zip')
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_ZIPSCAN = True
+            with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED) as archive:
+                archive.writestr(source.name, source.read_bytes())
+            opdsScanner().scan_all()
+            book = Book.objects.get(filename=source.name)
+            catalog = book.catalog
+            original_mtime = catalog.source_mtime_ns
+            user = User.objects.create_user('corrupt_zip', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=book)
+
+            target.write_bytes(b'invalid ZIP archive')
+            scanner = opdsScanner()
+            scanner.scan_all()
+
+        book.refresh_from_db()
+        catalog.refresh_from_db()
+        self.assertEqual(book.title, 'The Sanctuary Sparrow')
+        self.assertEqual(book.avail, 2)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+        self.assertEqual(catalog.source_mtime_ns, original_mtime)
+        self.assertEqual(scanner.bad_archives, 1)
+
+    def test_zip_book_parse_error_rolls_back_earlier_updates(self):
+        source = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            target = Path(root, 'books.zip')
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_ZIPSCAN = True
+            original = source.read_bytes()
+            with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED) as archive:
+                archive.writestr(source.name, original)
+            opdsScanner().scan_all()
+            book = Book.objects.get(filename=source.name)
+            catalog = book.catalog
+            original_mtime = catalog.source_mtime_ns
+
+            changed = original.replace(b'The Sanctuary Sparrow',
+                                       b'The Sanctuary Panther', 1)
+            with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED) as archive:
+                archive.writestr(source.name, changed)
+                archive.writestr('broken.fb2', b'invalid book data')
+            scanner = opdsScanner()
+            scanner.scan_all()
+
+        book.refresh_from_db()
+        catalog.refresh_from_db()
+        self.assertEqual(book.title, 'The Sanctuary Sparrow')
+        self.assertEqual(book.avail, 2)
+        self.assertEqual(Book.objects.count(), 1)
+        self.assertEqual(catalog.source_mtime_ns, original_mtime)
+        self.assertEqual(scanner.bad_books, 1)
+        self.assertEqual(scanner.bad_archives, 1)
+        self.assertEqual(scanner.books_updated, 0)
+
+    def test_corrupt_changed_inpx_keeps_existing_book_and_shelf(self):
+        fields = ['Doe, Jane', 'fantasy', 'Old Name', '', '', '123', '100',
+                  'id', '', 'fb2', '2020-01-01', 'en']
+        with TemporaryDirectory() as root:
+            target = Path(root, 'index.inpx')
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_INPX_ENABLE = True
+            config.SOPDS_INPX_SKIP_UNCHANGED = True
+            config.SOPDS_INPX_TEST_ZIP = False
+            config.SOPDS_INPX_TEST_FILES = False
+            with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_STORED) as archive:
+                archive.writestr('books.inp', '\x04'.join(fields).encode() + b'\n')
+            opdsScanner().scan_all()
+            book = Book.objects.get(filename='123.fb2')
+            catalog = book.catalog.parent.parent
+            original_mtime = catalog.source_mtime_ns
+            user = User.objects.create_user('corrupt_inpx', password='test-password')
+            shelf = bookshelf.objects.create(user=user, book=book)
+
+            target.write_bytes(b'invalid INPX archive')
+            scanner = opdsScanner()
+            scanner.scan_all()
+
+        book.refresh_from_db()
+        catalog.refresh_from_db()
+        self.assertEqual(book.title, 'Old Name')
+        self.assertEqual(book.avail, 2)
+        self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book.pk)
+        self.assertEqual(catalog.source_mtime_ns, original_mtime)
+        self.assertEqual(scanner.bad_archives, 1)
 
 
 class ScannerConcurrencyTests(TransactionTestCase):
