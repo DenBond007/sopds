@@ -347,11 +347,12 @@ def SearchAuthorsView(request):
                         
         # Создаем результирующее множество
         authors_count = authors.count()
+        authors = authors.annotate(book_count=Count('book'))
         op = OPDS_Paginator(authors_count, 0, page_num, config.SOPDS_MAXITEMS, HALF_PAGES_LINKS)        
         items = []
         
         for row in authors[op.d1_first_pos:op.d1_last_pos+1]:
-            p = {'id':row.id, 'full_name':row.full_name, 'lang_code': row.lang_code, 'book_count': Book.objects.filter(authors=row).count()}
+            p = {'id':row.id, 'full_name':row.full_name, 'lang_code': row.lang_code, 'book_count': row.book_count}
             items.append(p)                     
             
         args['paginator'] = op.get_data_dict()              
