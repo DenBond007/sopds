@@ -1,0 +1,25 @@
+# Только отдельный локальный кластер разработки; не подключать production volumes.
+name: sopds-modernization-dev
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${SOPDS_PG_ADMIN_PASSWORD:?Run scripts/dev/prepare-local.py first}
+      SOPDS_DEV_PASSWORD: ${SOPDS_DEV_PASSWORD:?Run scripts/dev/prepare-local.py first}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pg17_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/10-sopds-dev.sh:ro
+    healthcheck:
+      # TCP-проверка не срабатывает на временном Unix-socket сервере инициализации.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+volumes:
+  pg17_data:
