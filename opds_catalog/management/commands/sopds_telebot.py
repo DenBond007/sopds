@@ -15,7 +15,7 @@ from django.utils.html import strip_tags
 from django.db.models import Q, Count, Max
 from django.db import transaction, connection, connections
 from django.contrib.auth.models import User
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from django.utils import translation
 
 from django.contrib.postgres.aggregates import StringAgg

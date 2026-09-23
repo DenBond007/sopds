@@ -8,7 +8,7 @@ import os
 from django import forms, VERSION
 from django.apps import apps
 from django.conf import settings as django_settings
-from django.conf.urls import url
+from django.urls import re_path as url
 from django.contrib import admin, messages
 from django.contrib.admin import widgets
 from django.contrib.admin.options import csrf_protect_m
@@ -17,11 +17,10 @@ from django.core.files.storage import default_storage
 from django.forms import fields
 from django.http import HttpResponseRedirect
 from django.template.response import TemplateResponse
-from django.utils import six
 from django.utils.encoding import smart_bytes
 from django.utils.formats import localize
 from django.utils.module_loading import import_string
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from . import LazyConfig, settings
 from .checks import get_inconsistent_fieldnames
@@ -79,13 +78,6 @@ def parse_additional_fields(fields):
 
 
 FIELDS.update(parse_additional_fields(settings.ADDITIONAL_FIELDS))
-
-if not six.PY3:
-    FIELDS.update({
-        long: INTEGER_LIKE,
-        unicode: STRING_LIKE,
-    })
-
 
 def get_values():
     """
@@ -300,6 +292,7 @@ class Config(object):
         model_name = module_name = 'config'
         verbose_name_plural = _('config')
         abstract = False
+        is_composite_pk = False
         swapped = False
 
         def get_ordered_objects(self):

@@ -1,0 +1,16 @@
+[project]
+name = "sopds"
+version = "0.0.0"
+description = "SOPDS modernization environment"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "Django==5.2.17",
+    "APScheduler>=3.11,<3.12",
+    "django-picklefield>=3.3,<3.5",
+    "lxml>=5.4,<6",
+    "Pillow>=11.3,<12",
+    "psycopg2-binary>=2.9.10,<2.10",
+]
+
+[tool.uv]
+package = false

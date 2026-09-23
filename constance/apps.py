@@ -1,5 +1,6 @@
 from django.db.models import signals
 from django.apps import AppConfig
+from django.apps import apps
 
 
 class ConstanceConfig(AppConfig):
@@ -23,7 +24,8 @@ class ConstanceConfig(AppConfig):
         constance_dbs = getattr(settings, 'CONSTANCE_DBS', None)
         if constance_dbs is not None and using not in constance_dbs:
             return
-        if ContentType._meta.installed and Permission._meta.installed:
+        if (apps.is_installed('django.contrib.contenttypes') and
+                apps.is_installed('django.contrib.auth')):
             content_type, created = ContentType.objects.using(using).get_or_create(
                 app_label='constance',
                 model='config',

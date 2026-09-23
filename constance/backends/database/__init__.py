@@ -1,4 +1,5 @@
 from django.core.cache import caches
+from django.apps import apps
 from django.core.cache.backends.locmem import LocMemCache
 from django.core.exceptions import ImproperlyConfigured
 from django.db import OperationalError, ProgrammingError
@@ -16,7 +17,7 @@ class DatabaseBackend(Backend):
         self._autofill_timeout = settings.DATABASE_CACHE_AUTOFILL_TIMEOUT
         self._autofill_cachekey = 'autofilled'
 
-        if not self._model._meta.installed:
+        if not apps.is_installed('constance.backends.database'):
             raise ImproperlyConfigured(
                 "The constance.backends.database app isn't installed "
                 "correctly. Make sure it's in your INSTALLED_APPS setting.")

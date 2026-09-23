@@ -1,5 +1,5 @@
 
-from django.conf.urls import url
+from django.urls import re_path as url
 from sopds_web_backend import views
 
 app_name='opds_web_backend'
