@@ -344,23 +344,16 @@ def Cover(request, book_id, thumbnail=False):
 
     try:
         if book.cat_type == opdsdb.CAT_NORMAL:
-            file_path = full_path
-            fo = codecs.open(file_path, "rb")
-            book_data = create_bookfile(fo,book.filename)
-            image = book_data.extract_cover_memory()
-            #fb2.parse(fo, 0)
-            fo.close()
+            with open(full_path, 'rb') as book_file:
+                book_data = create_bookfile(book_file, book.filename)
+                image = book_data.extract_cover_memory()
         elif book.cat_type in [opdsdb.CAT_ZIP, opdsdb.CAT_INP]:
-            fz = codecs.open(full_path, "rb")
-            z = zipfile.ZipFile(fz, 'r', allowZip64=True)
-            fo = z.open(book.filename)
-            book_data = create_bookfile(fo, book.filename)
-            image = book_data.extract_cover_memory()
-            #fb2.parse(fo, 0)
-            fo.close()
-            z.close()
-            fz.close()
-    except:
+            with open(full_path, 'rb') as archive_file:
+                with zipfile.ZipFile(archive_file, 'r', allowZip64=True) as archive:
+                    with archive.open(book.filename) as book_file:
+                        book_data = create_bookfile(book_file, book.filename)
+                        image = book_data.extract_cover_memory()
+    except Exception:
         book_data = None
         image = None
 
@@ -377,9 +370,8 @@ def Cover(request, book_id, thumbnail=False):
     if not image:
         if os.path.exists(config.SOPDS_NOCOVER_PATH):
             response["Content-Type"] = 'image/jpeg'
-            f = open(config.SOPDS_NOCOVER_PATH, "rb")
-            response.write(f.read())
-            f.close()
+            with open(config.SOPDS_NOCOVER_PATH, 'rb') as fallback:
+                response.write(fallback.read())
         else:
             raise Http404
 
@@ -396,18 +388,13 @@ def Cover0(request, book_id, thumbnail = False):
     if book.format=='fb2':        
         fb2=fb2parse.fb2parser(1)
         if book.cat_type==opdsdb.CAT_NORMAL:
-            file_path = full_path
-            fo=codecs.open(file_path, "rb")
-            fb2.parse(fo,0)
-            fo.close()
+            with open(full_path, 'rb') as book_file:
+                fb2.parse(book_file, 0)
         elif book.cat_type in [opdsdb.CAT_ZIP, opdsdb.CAT_INP]:
-            fz=codecs.open(full_path, "rb")
-            z = zipfile.ZipFile(fz, 'r', allowZip64=True)
-            fo = z.open(book.filename)
-            fb2.parse(fo,0)
-            fo.close()
-            z.close()
-            fz.close()
+            with open(full_path, 'rb') as archive_file:
+                with zipfile.ZipFile(archive_file, 'r', allowZip64=True) as archive:
+                    with archive.open(book.filename) as book_file:
+                        fb2.parse(book_file, 0)
 
         if len(fb2.cover_image.cover_data)>0:
             try:
@@ -430,9 +417,8 @@ def Cover0(request, book_id, thumbnail = False):
     if c0==0:
         if os.path.exists(config.SOPDS_NOCOVER_PATH):
             response["Content-Type"]='image/jpeg'
-            f=open(config.SOPDS_NOCOVER_PATH,"rb")
-            response.write(f.read())
-            f.close()
+            with open(config.SOPDS_NOCOVER_PATH, 'rb') as fallback:
+                response.write(fallback.read())
         else:
             raise Http404
 
