@@ -62,6 +62,7 @@ class Catalog(models.Model):
     path = models.CharField(max_length=SIZE_CAT_PATH, db_index=True)
     cat_type = models.IntegerField(null=False, default=0)
     cat_size = models.BigIntegerField(null=True, default=0)
+    source_mtime_ns = models.BigIntegerField(null=True, blank=True)
 
 class Author(models.Model):
     full_name = models.CharField(max_length=SIZE_AUTHOR_NAME, default=None, db_index=True)

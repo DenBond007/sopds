@@ -4,9 +4,9 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
 
-class BookMtimeMigrationTests(TransactionTestCase):
+class SourceMtimeMigrationTests(TransactionTestCase):
     old = ('opds_catalog', '0001_initial')
-    new = ('opds_catalog', '0002_book_source_mtime_ns')
+    new = ('opds_catalog', '0003_catalog_source_mtime_ns')
 
     def test_existing_book_and_shelf_keep_ids(self):
         executor = MigrationExecutor(connection)
@@ -32,7 +32,9 @@ class BookMtimeMigrationTests(TransactionTestCase):
 
         new_apps = executor.loader.project_state([self.new]).apps
         NewBook = new_apps.get_model('opds_catalog', 'Book')
+        NewCatalog = new_apps.get_model('opds_catalog', 'Catalog')
         NewShelf = new_apps.get_model('opds_catalog', 'bookshelf')
         migrated = NewBook.objects.get(pk=book_id)
         self.assertIsNone(migrated.source_mtime_ns)
+        self.assertIsNone(NewCatalog.objects.get(pk=catalog.pk).source_mtime_ns)
         self.assertEqual(NewShelf.objects.get(pk=shelf_id).book_id, book_id)
