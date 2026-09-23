@@ -12,6 +12,40 @@ from opds_catalog.dl import Cover, Cover0
 
 
 class CoverResourceTests(TestCase):
+    def test_cover_rejects_oversize_regular_source_before_parsing(self):
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_NOCOVER_PATH = str(Path(root, 'missing.jpg'))
+            Path(root, 'inside.fb2').write_bytes(b'x' * 129)
+            catalog = opdsdb.addcattree('.')
+            book = opdsdb.addbook(
+                'inside.fb2', '.', catalog, 'fb2', 'Inside', '', '', 'en', 129
+            )
+            with patch('opds_catalog.dl.MAX_COVER_SOURCE_BYTES', 128, create=True), \
+                 patch('opds_catalog.dl.create_bookfile') as parse:
+                with self.assertRaises(Http404):
+                    Cover(RequestFactory().get('/cover-regular-oversize/'), book.pk)
+
+        parse.assert_not_called()
+
+    def test_cover_rejects_oversize_zip_member_before_parsing(self):
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            config.SOPDS_NOCOVER_PATH = str(Path(root, 'missing.jpg'))
+            with zipfile.ZipFile(Path(root, 'books.zip'), 'w') as archive:
+                archive.writestr('inside.fb2', b'x' * 129)
+            catalog = opdsdb.addcattree('.')
+            book = opdsdb.addbook(
+                'inside.fb2', 'books.zip', catalog, 'fb2', 'Inside', '', '',
+                'en', 129, opdsdb.CAT_ZIP
+            )
+            with patch('opds_catalog.dl.MAX_COVER_SOURCE_BYTES', 128, create=True), \
+                 patch('opds_catalog.dl.create_bookfile') as parse:
+                with self.assertRaises(Http404):
+                    Cover(RequestFactory().get('/cover-zip-oversize/'), book.pk)
+
+        parse.assert_not_called()
+
     def test_cover_reads_regular_fixture(self):
         source = Path(__file__).parent / 'data' / '262001.fb2'
         with TemporaryDirectory() as root:
@@ -23,7 +57,8 @@ class CoverResourceTests(TestCase):
                 source.name, '.', catalog, 'fb2', 'Fixture', '', '', 'en',
                 source.stat().st_size
             )
-            response = Cover(RequestFactory().get('/cover-regular-fixture/'), book.pk)
+            with patch('opds_catalog.dl.MAX_COVER_SOURCE_BYTES', source.stat().st_size):
+                response = Cover(RequestFactory().get('/cover-regular-fixture/'), book.pk)
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.content.startswith(b'\xff\xd8'))

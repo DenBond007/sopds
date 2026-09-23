@@ -28,6 +28,14 @@ from opds_catalog.middleware import BasicAuthMiddleware
 
 CONVERTER_TIMEOUT_SECONDS = 300
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
+MAX_COVER_SOURCE_BYTES = 32 * 1024 * 1024
+
+
+def _cover_bookfile(reader, filename):
+    source = reader.read(MAX_COVER_SOURCE_BYTES + 1)
+    if len(source) > MAX_COVER_SOURCE_BYTES:
+        raise ValueError('book is too large to parse for a cover')
+    return create_bookfile(io.BytesIO(source), filename)
 
 def resolve_book_source_path(book):
     try:
@@ -345,13 +353,13 @@ def Cover(request, book_id, thumbnail=False):
     try:
         if book.cat_type == opdsdb.CAT_NORMAL:
             with open(full_path, 'rb') as book_file:
-                book_data = create_bookfile(book_file, book.filename)
+                book_data = _cover_bookfile(book_file, book.filename)
                 image = book_data.extract_cover_memory()
         elif book.cat_type in [opdsdb.CAT_ZIP, opdsdb.CAT_INP]:
             with open(full_path, 'rb') as archive_file:
                 with zipfile.ZipFile(archive_file, 'r', allowZip64=True) as archive:
                     with archive.open(book.filename) as book_file:
-                        book_data = create_bookfile(book_file, book.filename)
+                        book_data = _cover_bookfile(book_file, book.filename)
                         image = book_data.extract_cover_memory()
     except Exception:
         book_data = None
