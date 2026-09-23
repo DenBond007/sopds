@@ -293,3 +293,23 @@ M03.2: [PostgreSQL 17](https://www.postgresql.org/docs/17/explicit-locking.html#
 exit 0. Общий набор: 60/60, exit 0, без замечаний Django. После него одноразовая
 test-БД отсутствует. Логи: `.local/logs/m03-lock-tests-1.log`,
 `m03-lock-tests-2.log`, `m03-lock-tests-3.log`, `m03-lock-full.log`.
+
+M03.3: на копии отслеживаемой тестовой FB2 в `TemporaryDirectory` заменён
+заголовок на строку той же байтовой длины и увеличен mtime. Повторный scan
+сохранил прежний заголовок (`1 тест, 1 падение`, exit 1), хотя ID и полка
+должны оставаться прежними. Лог: `.local/logs/m03-change-before.log`.
+`Book` хранит filesize, но не время изменения; `findbook` при совпадении
+имени/пути всегда пропускает разбор. Для обычного файла выбран nullable
+`source_mtime_ns` + существующий filesize. При изменении метаданные, авторы,
+жанры и серии обновляются в прежней строке только после успешного разбора;
+ID, полка и registerdate сохраняются. Архивы/INPX требуют отдельного решения,
+поскольку сейчас их пропуск основан только на размере каталога.
+
+M03.4a: `opds_catalog.0002_book_source_mtime_ns` добавляет только nullable
+BigIntegerField к `Book`; историческую `0001_initial` не меняли. Тест через
+`MigrationExecutor` создал книгу и полку на старой схеме, применил 0002 и
+подтвердил прежние ID/связь и `source_mtime_ns=NULL` (1/1, exit 0).
+`makemigrations --check --dry-run` завершился с кодом 0, изменений сверх 0002
+нет. Логи: `.local/logs/m03-mtime-makemigrations.log`,
+`m03-mtime-migration-test.log`, `m03-mtime-schema-check.log`. Реальная прежняя
+БД не предоставлена, поэтому её миграция не проверена.

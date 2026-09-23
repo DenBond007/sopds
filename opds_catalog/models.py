@@ -39,6 +39,7 @@ class Book(models.Model):
     filename = models.CharField(max_length=SIZE_BOOK_FILENAME,db_index=True)
     path = models.CharField(max_length=SIZE_BOOK_PATH,db_index=True)
     filesize = models.IntegerField(null=False, default=0)
+    source_mtime_ns = models.BigIntegerField(null=True, blank=True)
     format = models.CharField(max_length=SIZE_BOOK_FORMAT)
     catalog = models.ForeignKey('Catalog',db_index=True, on_delete=models.CASCADE)
     cat_type = models.IntegerField(null=False, default=0)
