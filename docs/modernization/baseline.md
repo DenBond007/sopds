@@ -653,3 +653,10 @@ Ubuntu 24.04, Python 3.13, PostgreSQL 17, `uv sync --frozen`, Django check,
 Actions не запускался, поскольку push не разрешён. Логи:
 `.local/logs/m05-ci-uv-sync.log`, `m05-ci-check.log`, `m05-ci-migrations.log`,
 `m05-ci-tests.log`.
+
+M05.4: общий локальный эквивалент CI дал 131/131 тестов, exit 0; test-БД
+удалена. Отдельный `SOPDS_DEBUG=0 manage.py check --deploy` завершился с
+четырьмя предупреждениями W004/W008/W012/W016 (HSTS, HTTPS redirect,
+Secure-флаги cookies) для ещё не определённой HTTPS-схемы; критических
+ошибок проверки нет. Итоговые подтверждения и внешние условия записаны в
+[candidate.md](candidate.md). Лог: `.local/logs/m05-deploy-check.log`.
