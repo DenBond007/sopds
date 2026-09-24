@@ -1,18 +1,18 @@
 {
-    # No HTTP listener on the LAN; Django redirects accidental HTTP upstream requests.
-    auto_https disable_redirects
+	# No HTTP listener on the LAN; Django redirects accidental HTTP upstream requests.
+	auto_https disable_redirects
 }
 
 https://{$SOPDS_PRIVATE_HOST} {
-    bind {$SOPDS_PRIVATE_HOST}
-    tls internal
+	bind {$SOPDS_PRIVATE_HOST}
+	tls internal
 
-    handle_path /static/* {
-        root * {$SOPDS_STATIC_ROOT}
-        file_server
-    }
+	handle_path /static/* {
+		root * {$SOPDS_STATIC_ROOT}
+		file_server
+	}
 
-    handle {
-        reverse_proxy 127.0.0.1:8000
-    }
+	handle {
+		reverse_proxy 127.0.0.1:8000
+	}
 }
