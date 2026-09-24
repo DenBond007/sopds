@@ -636,3 +636,10 @@ web-поиск, OPDS-поиск, потоковое скачивание, admin 
 `DJANGO_SETTINGS_MODULE` отклонил Django; повтор с явным модулем прошёл —
 это ошибка диагностической команды, а не приложения. Логи:
 `.local/logs/m05-candidate-smoke.log`, `.local/logs/m05-debug-off-check.log`.
+
+M05.3a: инструкция [backup/restore/отката](operations.md) задаёт проверки
+назначения и восстановление только в новую БД. Локальный `pg_dump` 16.15
+при read-only `--schema-only --file=/dev/null` отклонил сервер 17.11 из-за
+несовпадения версий, exit 1; дамп и данные не изменялись. Для пробного
+восстановления нужен клиент PostgreSQL 17, устанавливаемый человеком.
+Лог: `.local/logs/m05-pgdump-client-check.log`.
