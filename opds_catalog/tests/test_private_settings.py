@@ -26,9 +26,11 @@ class PrivateSettingsTests(SimpleTestCase):
         return subprocess.run(
             [sys.executable, '-c',
              'from sopds import settings_private as s; '
+             'import os; '
              'assert s.DEBUG is False; '
-             'assert s.ALLOWED_HOSTS == ["192.168.1.20"]; '
-             'assert s.CSRF_TRUSTED_ORIGINS == ["https://192.168.1.20"]; '
+             'host = os.environ["SOPDS_PRIVATE_HOST"]; '
+             'assert s.ALLOWED_HOSTS == [host]; '
+             'assert s.CSRF_TRUSTED_ORIGINS == ["https://" + host]; '
              'assert s.SECURE_SSL_REDIRECT; '
              'assert s.SESSION_COOKIE_SECURE and s.CSRF_COOKIE_SECURE; '
              'assert s.SECURE_HSTS_SECONDS == 0'],
@@ -38,6 +40,12 @@ class PrivateSettingsTests(SimpleTestCase):
     def test_private_settings_override_dev_http_values(self):
         result = self._load_settings('192.168.1.20')
         self.assertEqual(result.returncode, 0, result.stderr.decode())
+
+    def test_private_settings_uses_changed_ip_or_dns_on_restart(self):
+        for host in ('192.168.1.20', '192.168.1.21', 'books.home.arpa'):
+            with self.subTest(host=host):
+                result = self._load_settings(host)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
 
     def test_private_settings_reject_invalid_host_and_static_root(self):
         for host, root in [('books.local:443', '/srv/sopds/static'),
