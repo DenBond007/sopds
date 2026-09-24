@@ -248,13 +248,14 @@ def addbook(name, path, cat, exten, title, annotation, docdate, lang, size=0, ar
     return book
 
 
-def updatebook(book, cat, exten, title, annotation, docdate, lang, size, archive, source_mtime_ns=None, scan_id=None):
+def updatebook(book, cat, exten, title, annotation, docdate, lang, size, archive, source_mtime_ns=None, scan_id=None, preserve_annotation=False):
     book.catalog = cat
     book.filesize = size
     book.format = exten.lower()[:SIZE_BOOK_FORMAT]
     book.title = title[:SIZE_BOOK_TITLE]
     book.search_title = title.upper()[:SIZE_BOOK_TITLE]
-    book.annotation = p(annotation, SIZE_BOOK_ANNOTATION)
+    if not preserve_annotation:
+        book.annotation = p(annotation, SIZE_BOOK_ANNOTATION)
     book.docdate = docdate[:SIZE_BOOK_DOCDATE]
     book.lang = lang[:SIZE_BOOK_LANG]
     book.lang_code = getlangcode(title)
@@ -263,11 +264,14 @@ def updatebook(book, cat, exten, title, annotation, docdate, lang, size, archive
     book.source_mtime_ns = source_mtime_ns
     if scan_id is not None:
         book.last_seen_scan_id = scan_id
-    book.save(update_fields=[
-        'catalog', 'filesize', 'format', 'title', 'search_title', 'annotation',
+    update_fields = [
+        'catalog', 'filesize', 'format', 'title', 'search_title',
         'docdate', 'lang', 'lang_code', 'cat_type', 'avail', 'source_mtime_ns',
         'last_seen_scan_id',
-    ])
+    ]
+    if not preserve_annotation:
+        update_fields.append('annotation')
+    book.save(update_fields=update_fields)
     return book
 
 def findauthor(full_name):

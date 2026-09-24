@@ -293,6 +293,7 @@ class ScanDataSafetyTests(TestCase):
                     archive_mtime = target.stat().st_mtime_ns
                     opdsScanner().scan_all()
                     book = Book.objects.get(filename='123.fb2')
+                    Book.objects.filter(pk=book.pk).update(annotation='Saved description')
                     original_registered = book.registerdate
                     user = User.objects.create_user('changed_inpx', password='test-password')
                     shelf = bookshelf.objects.create(user=user, book=book)
@@ -306,6 +307,7 @@ class ScanDataSafetyTests(TestCase):
 
         book.refresh_from_db()
         self.assertEqual(book.title, 'New Name')
+        self.assertEqual(book.annotation, 'Saved description')
         self.assertEqual(book.registerdate, original_registered)
         self.assertEqual(list(book.authors.values_list('full_name', flat=True)), ['Roe  Mary'])
         self.assertEqual(list(book.genres.values_list('genre', flat=True)), ['mystery'])

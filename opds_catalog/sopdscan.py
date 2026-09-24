@@ -171,7 +171,7 @@ class opdsScanner:
                  
         name = "%s.%s"%(meta_data[inpx_parser.sFile],meta_data[inpx_parser.sExt])
        
-        annotation='NotYet'
+        annotation=''
         lang=meta_data[inpx_parser.sLang].strip(strip_symbols)
         # get the language fullname, otherwise ISO-639-1 shortname
         lang = self.fullang.get(lang.upper(),lang)
@@ -195,7 +195,7 @@ class opdsScanner:
         if existing is None:
             book=opdsdb.addbook(name,rel_path_current,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP,scan_id=self.scan_id)
         else:
-            book=opdsdb.updatebook(existing,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP,scan_id=self.scan_id)
+            book=opdsdb.updatebook(existing,cat,meta_data[inpx_parser.sExt],title,annotation,docdate,lang,meta_data[inpx_parser.sSize],opdsdb.CAT_INP,scan_id=self.scan_id,preserve_annotation=True)
             book.authors.clear()
             book.genres.clear()
             book.series.clear()
