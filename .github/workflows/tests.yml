@@ -1,0 +1,53 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  django:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: sopds_ci
+          POSTGRES_USER: sopds_ci
+          POSTGRES_PASSWORD: sopds_ci_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sopds_ci -d sopds_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_NAME: sopds_ci
+      DB_USER: sopds_ci
+      DB_PASS: sopds_ci_test_only
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      SOPDS_SECRET_KEY: ci-test-only-secret-key-at-least-32-characters
+      SOPDS_DEBUG: '0'
+      SOPDS_ALLOWED_HOSTS: testserver,127.0.0.1,localhost
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: '0.12.17'
+      - name: Install locked dependencies
+        run: uv sync --python python3.13 --frozen
+      - name: Check Django configuration and migrations
+        run: |
+          .venv/bin/python manage.py check
+          .venv/bin/python manage.py makemigrations --check --dry-run
+      - name: Run Django tests
+        run: .venv/bin/python manage.py test --noinput

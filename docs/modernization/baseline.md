@@ -643,3 +643,13 @@ M05.3a: инструкция [backup/restore/отката](operations.md) зад
 несовпадения версий, exit 1; дамп и данные не изменялись. Для пробного
 восстановления нужен клиент PostgreSQL 17, устанавливаемый человеком.
 Лог: `.local/logs/m05-pgdump-client-check.log`.
+
+M05.3b: добавлен только тестовый workflow `.github/workflows/tests.yml`:
+Ubuntu 24.04, Python 3.13, PostgreSQL 17, `uv sync --frozen`, Django check,
+проверка миграций и общий набор. Локальный YAML-парсер подтвердил структуру;
+с dev PostgreSQL 17 локальный offline `uv sync` проверил 17 пакетов,
+`manage.py check` дал 0 замечаний, `makemigrations --check --dry-run` не нашёл
+изменений, 131/131 тестов прошли, exit 0; test-БД удалена. Удалённый GitHub
+Actions не запускался, поскольку push не разрешён. Логи:
+`.local/logs/m05-ci-uv-sync.log`, `m05-ci-check.log`, `m05-ci-migrations.log`,
+`m05-ci-tests.log`.
