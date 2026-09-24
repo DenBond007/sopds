@@ -4,12 +4,23 @@ from datetime import timedelta
 
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.html import strip_tags
 
-from opds_catalog.models import AnnotationTask
+from opds_catalog.models import AnnotationTask, Book
 from opds_catalog.opdsdb import CAT_INP
 
 
 RECHECK_AFTER = timedelta(hours=24)
+
+
+def annotation_text(value):
+    return '' if not value or value == 'NotYet' else strip_tags(value)
+
+
+def enqueue_visible_ids(ids):
+    if ids:
+        enqueue_visible(Book.objects.filter(pk__in=set(ids)).only(
+            'id', 'cat_type', 'avail'))
 
 
 def enqueue_visible(books):

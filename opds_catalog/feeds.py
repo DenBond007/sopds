@@ -5,9 +5,9 @@ from django.contrib.syndication.views import Feed
 from django.urls import reverse
 from django.shortcuts import render
 from django.db.models import Count, Min
-from django.utils.html import strip_tags
 
 from opds_catalog.models import Book, Catalog, Author, Genre, Series, bookshelf, Counter, lang_menu
+from opds_catalog.annotations import annotation_text, enqueue_visible_ids
 from opds_catalog import models
 from opds_catalog.prefix_query import prefix_groups
 from opds_catalog import settings
@@ -238,12 +238,13 @@ class CatalogsFeed(AuthFeed):
               
         for row in books_list[op.d2_first_pos:op.d2_last_pos+1]:
             p = {'is_catalog':0, 'lang_code': row.lang_code, 'filename': row.filename, 'path': row.path, \
-                  'registerdate': row.registerdate, 'id': row.id, 'annotation': strip_tags(row.annotation), \
+                  'registerdate': row.registerdate, 'id': row.id, 'annotation': annotation_text(row.annotation), \
                   'docdate': row.docdate, 'format': row.format, 'title': row.title, 'filesize': row.filesize//1000,
                   'authors':row.authors.values(), 'genres':row.genres.values(), 'series':row.series.values(), 'ser_no':row.bseries_set.values('ser_no')}
             items.append(p)
             
-        return items, cat, op.get_data_dict()            
+        enqueue_visible_ids([item['id'] for item in items if not item['is_catalog']])
+        return items, cat, op.get_data_dict()
 
     def title(self, obj):
         items, cat, paginator = obj
@@ -477,7 +478,7 @@ class SearchBooksFeed(AuthFeed):
                       for item in row.series.all()]
             ser_no = [{'ser_no': item.ser_no} for item in row.bseries_set.all()]
             p = {'doubles':0, 'lang_code': row.lang_code, 'filename': row.filename, 'path': row.path, \
-                  'registerdate': row.registerdate, 'id': row.id, 'annotation': strip_tags(row.annotation), \
+                  'registerdate': row.registerdate, 'id': row.id, 'annotation': annotation_text(row.annotation), \
                   'docdate': row.docdate, 'format': row.format, 'title': row.title, 'filesize': row.filesize//1000,
                   'authors':authors, 'genres':genres, 'series':series, 'ser_no':ser_no}
             if summary_DOUBLES_HIDE:
@@ -505,6 +506,7 @@ class SearchBooksFeed(AuthFeed):
             if op.d1_first_pos!=0:     
                 items.pop(0)          
                   
+        enqueue_visible_ids([item['id'] for item in items])
         return {"books":items, "searchterms":searchterms, "searchterms0":searchterms0, "searchtype":searchtype, "paginator":op.get_data_dict()}
 
     def get_link_kwargs(self, obj):

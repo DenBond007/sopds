@@ -170,7 +170,7 @@
         </tr>
         <tr>
             <td colspan="3">
-                <p style="font-size:90%;">{{b.annotation}}</p>
+                <p style="font-size:90%;"{% if b.annotation_pending %} data-annotation-book="{{b.id}}"{% endif %}>{{b.annotation}}</p>
             </td>
         </tr>
 		</table>
@@ -207,3 +207,47 @@
 {% endif %}
 
 {% endblock %}  {# body #}
+
+{% block block-js %}
+{% trans "Annotation is being prepared..." as pending_label %}
+{% trans "No annotation in this book." as missing_label %}
+{% trans "Annotation could not be loaded." as error_label %}
+<script>
+  (function () {
+    const elements = Array.from(document.querySelectorAll('[data-annotation-book]'));
+    if (!elements.length) return;
+    const pending = new Map(elements.map(el => [el.dataset.annotationBook, el]));
+    const labels = {
+      pending: '{{ pending_label|escapejs }}',
+      missing: '{{ missing_label|escapejs }}',
+      error: '{{ error_label|escapejs }}'
+    };
+    async function refresh() {
+      const ids = Array.from(pending.keys());
+      for (let offset = 0; offset < ids.length; offset += 60) {
+        const batch = ids.slice(offset, offset + 60);
+        try {
+          const response = await fetch('{% url "web:annotations" %}?ids=' + batch.join(','),
+                                       {credentials: 'same-origin', cache: 'no-store'});
+          if (!response.ok) continue;
+          const data = (await response.json()).books;
+          for (const id of batch) {
+            const row = data[id];
+            if (!row) { pending.delete(id); continue; }
+            const element = pending.get(id);
+            element.textContent = row.annotation || labels[row.status] || labels.pending;
+            if (row.status === 'ready' || row.status === 'missing' || row.status === 'error') {
+              pending.delete(id);
+            }
+          }
+        } catch (_) { /* Retry at the next interval. */ }
+      }
+      if (!pending.size) clearInterval(timer);
+    }
+    const timer = setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 5000);
+    refresh();
+  })();
+</script>
+{% endblock %}

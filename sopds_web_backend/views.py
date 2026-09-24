@@ -1,6 +1,3 @@
-import os
-import codecs
-
 from random import randint
 
 from django.shortcuts import render, redirect
@@ -11,36 +8,19 @@ from django.contrib.auth import authenticate, login, logout, REDIRECT_FIELD_NAME
 from django.contrib.auth.decorators import user_passes_test
 from django.views.decorators.vary import vary_on_headers
 from django.urls import reverse, reverse_lazy
-from django.utils.html import strip_tags
+from django.http import JsonResponse
 from django.db.models import Q
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseBadRequest, HttpResponseForbidden
 
-from book_tools.format import create_bookfile
-import opds_catalog.zipf as zipfile
 from opds_catalog import models
+from opds_catalog.annotations import annotation_text, enqueue_visible_ids
 from opds_catalog.prefix_query import prefix_groups
-from opds_catalog.models import Book, Author, Series, bookshelf, Counter, Catalog, Genre, lang_menu
+from opds_catalog.models import AnnotationTask, Book, Author, Series, bookshelf, Counter, Catalog, Genre, lang_menu
 from opds_catalog import settings
 from constance import config
 from opds_catalog.opds_paginator import Paginator as OPDS_Paginator
 
 from sopds_web_backend.settings import HALF_PAGES_LINKS
-
-def get_annotation(mybook):
-    full_path = os.path.join(config.SOPDS_ROOT_LIB, mybook.path)
-    # Убираем из пути INPX и INP файл
-    inp_path, zip_name = os.path.split(full_path)
-    inpx_path, inp_name = os.path.split(inp_path)
-    path, inpx_name = os.path.split(inpx_path)
-    full_path = os.path.join(path,zip_name)
-    fz = codecs.open(full_path, "rb")
-    z = zipfile.ZipFile(fz, 'r', allowZip64=True)
-    fo = z.open(mybook.filename)
-    book_data = create_bookfile(fo, mybook.filename)
-    annotation = book_data.description if book_data.description else ''
-    annotation = annotation.strip(' \'\&\n-.#\\\`') if isinstance(annotation, str) else annotation.decode('utf8').strip(' \'\&\n-.#\\\`')
-    return annotation
-
 
 def sopds_login(function=None, redirect_field_name=REDIRECT_FIELD_NAME, url=None):
     actual_decorator = user_passes_test(
@@ -86,16 +66,35 @@ def sopds_processor(request):
             random_book= None
     else:
         random_book= None
-    # Get annotation if note done yet
-    if random_book and random_book.annotation == 'NotYet':
-        random_book.annotation = get_annotation(random_book)
-        random_book.save()
+    if random_book:
+        random_book.annotation = annotation_text(random_book.annotation)
     args['random_book'] = random_book
     stats = { d['name']:d['value'] for d in Counter.obj.all().values() }
     stats['lastscan_date']=Counter.objects.get_lastscan()
     args['stats'] = stats
   
     return args
+
+
+@sopds_login(url='web:login')
+def AnnotationStatusView(request):
+    raw_ids = request.GET.get('ids', '').split(',')
+    if not raw_ids or len(raw_ids) > 60 or any(
+            not value.isascii() or not value.isdecimal() for value in raw_ids):
+        return HttpResponseBadRequest()
+    ids = {int(value) for value in raw_ids}
+    enqueue_visible_ids(ids)
+    result = {}
+    for book in Book.objects.filter(pk__in=ids, avail__gt=0).select_related('annotation_task'):
+        task = getattr(book, 'annotation_task', None)
+        status = task.status if task else AnnotationTask.STATUS_PENDING
+        result[str(book.pk)] = {
+            'annotation': annotation_text(book.annotation),
+            'status': status,
+        }
+    response = JsonResponse({'books': result})
+    response['Cache-Control'] = 'no-store'
+    return response
 
 # Create your views here.
 @vary_on_headers("HTTP_ACCEPT_LANGUAGE")
@@ -230,12 +229,9 @@ def SearchBooksView(request):
             series = [{'id': item.id, 'ser': item.ser}
                       for item in row.series.all()]
             ser_no = [{'ser_no': item.ser_no} for item in row.bseries_set.all()]
-            # Get annotation if note done yet
-            if row.annotation == 'NotYet':
-                row.annotation = get_annotation(row)
-                row.save()
             p = {'doubles':0, 'lang_code': row.lang_code, 'filename': row.filename, 'path': row.path, 'shortpath': shortpath, \
-                  'registerdate': row.registerdate, 'id': row.id, 'annotation': strip_tags(row.annotation), \
+                  'registerdate': row.registerdate, 'id': row.id, 'annotation': annotation_text(row.annotation), \
+                  'annotation_pending': row.cat_type == 3 and row.avail > 0, \
                   'docdate': row.docdate, 'lang': row.lang, 'format': row.format, 'title': row.title, 'filesize': row.filesize,\
                   'authors': authors, 'genres': genres, 'series': series, 'ser_no': ser_no,\
                   'readtime':row.bookshelf_set.filter(user=request.user).values('readtime') if config.SOPDS_AUTH else None
@@ -265,6 +261,7 @@ def SearchBooksView(request):
             if op.d1_first_pos!=0:     
                 items.pop(0)                                   
               
+        enqueue_visible_ids([item['id'] for item in items])
         args['paginator'] = op.get_data_dict()
         args['searchterms']=searchterms;
         args['searchtype']=searchtype;
@@ -405,13 +402,14 @@ def CatalogsView(request):
     for row in books_list[op.d2_first_pos:op.d2_last_pos+1]:
         shortpath = row.path[row.path.rfind('/')+1:]
         p = {'is_catalog':0, 'lang_code': row.lang_code, 'filename': row.filename, 'path': row.path, 'shortpath': shortpath, \
-              'registerdate': row.registerdate, 'id': row.id, 'annotation': strip_tags(row.annotation), \
+              'registerdate': row.registerdate, 'id': row.id, 'annotation': annotation_text(row.annotation), \
               'docdate': row.docdate, 'lang': row.lang, 'format': row.format, 'title': row.title, 'filesize': row.filesize, \
               'authors':list(row.authors.all()), 'genres':row.genres.values(), 'series':row.series.values(), 'ser_no':row.bseries_set.values('ser_no'),\
               'readtime': row.bookshelf_set.filter(user=request.user).values('readtime') if config.SOPDS_AUTH else None
              }
         items.append(p)
                     
+    enqueue_visible_ids([item['id'] for item in items if not item['is_catalog']])
     args['paginator'] = op.get_data_dict()
     args['items']=items
     args['cat_id'] = cat_id

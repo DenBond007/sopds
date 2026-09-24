@@ -5,6 +5,7 @@ from sopds_web_backend import views
 app_name='opds_web_backend'
 
 urlpatterns = [
+    url(r'^annotations/$', views.AnnotationStatusView, name='annotations'),
     url(r'^search/books/$',views.SearchBooksView, name='searchbooks'),
     url(r'^search/authors/$',views.SearchAuthorsView, name='searchauthors'),
     url(r'^search/series/$',views.SearchSeriesView, name='searchseries'),
