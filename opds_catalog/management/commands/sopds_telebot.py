@@ -24,6 +24,7 @@ from django.utils import translation
 from django.contrib.postgres.aggregates import StringAgg
 
 from opds_catalog.models import Book
+from opds_catalog.annotations import annotation_text
 from opds_catalog import settings, dl
 from opds_catalog.opds_paginator import Paginator as OPDS_Paginator
 from sopds_web_backend.settings import HALF_PAGES_LINKS
@@ -247,7 +248,7 @@ class Command(BaseCommand):
         except Book.DoesNotExist:
             return None
         authors = ', '.join([a['full_name'] for a in book.authors.values()])
-        response = ('<b>%(title)s</b>\n%(author)s\n<b>'+_("Annotation:")+'</b>%(annotation)s\n') % {'title': book.title, 'author': authors, 'annotation':book.annotation}
+        response = ('<b>%(title)s</b>\n%(author)s\n<b>'+_("Annotation:")+'</b>%(annotation)s\n') % {'title': book.title, 'author': authors, 'annotation':annotation_text(book.annotation)}
 
         buttons = [InlineKeyboardButton(book.format.upper(), callback_data='/getfileorig%s'%book_id)]
         if book.format not in settings.NOZIP_FORMATS:

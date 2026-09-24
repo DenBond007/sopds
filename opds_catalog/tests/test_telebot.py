@@ -72,6 +72,13 @@ class TelegramCommandTests(TransactionTestCase):
         buttons = bot.send_message.await_args.kwargs['reply_markup'].inline_keyboard[0]
         self.assertEqual(buttons[0].callback_data, f'/getfileorig{book.pk}')
 
+    def test_download_details_hide_legacy_annotation_marker(self):
+        catalog = opdsdb.addcattree('.')
+        book = opdsdb.addbook('title.fb2', '.', catalog, 'fb2',
+                              'Test Title', 'NotYet', '', 'en')
+        details = self.command.book_download_details(book.pk)
+        self.assertNotIn('NotYet', details[0])
+
     def test_authorization_blocks_unknown_user(self):
         config.SOPDS_TELEBOT_AUTH = True
         bot = SimpleNamespace(send_message=AsyncMock())

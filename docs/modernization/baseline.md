@@ -606,3 +606,9 @@ M04.9d5: общий набор 129/129, `manage.py check` без замечан�
 `.local/logs/m04-annotation-general-final.log`,
 `m04-annotation-check-final.log`,
 `m04-annotation-makemigrations-final.log`.
+
+M04.9d6: финальный поиск нашёл старое `NotYet` в Telegram-карточке книги.
+Карточка теперь использует общий фильтр сохранённой аннотации. Адресные 5/5
+и общие 130/130 тестов прошли, exit 0, замечаний Django нет; test-БД удалена.
+Логи: `.local/logs/m04-annotation-telegram-targeted.log`,
+`m04-annotation-general-telegram-final.log`.
