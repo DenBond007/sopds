@@ -12,13 +12,23 @@ from .settings import *  # noqa: F403,F401
 
 def _valid_host(value):
     try:
-        ipaddress.IPv4Address(value)
-        return True
+        address = ipaddress.IPv4Address(value)
     except ipaddress.AddressValueError:
-        pass
-    return all(
-        re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
-        for label in value.split(".")
+        labels = value.split(".")
+        if value == "localhost" or value.endswith(".localhost"):
+            return False
+        if len(labels) == 4 and all(label.isdecimal() for label in labels):
+            return False
+        return all(
+            re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+            for label in labels
+        )
+    return not (
+        address.is_unspecified
+        or address.is_loopback
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_link_local
     )
 
 

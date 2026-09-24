@@ -48,8 +48,14 @@ class PrivateSettingsTests(SimpleTestCase):
                 self.assertEqual(result.returncode, 0, result.stderr.decode())
 
     def test_private_settings_reject_invalid_host_and_static_root(self):
-        for host, root in [('books.local:443', '/srv/sopds/static'),
-                           ('192.168.1.20', '/')]:
+        for host, root in [
+            ('books.local:443', '/srv/sopds/static'),
+            ('0.0.0.0', '/srv/sopds/static'),
+            ('127.0.0.1', '/srv/sopds/static'),
+            ('999.999.999.999', '/srv/sopds/static'),
+            ('localhost', '/srv/sopds/static'),
+            ('192.168.1.20', '/'),
+        ]:
             with self.subTest(host=host, root=root):
                 result = self._load_settings(host, root)
                 self.assertNotEqual(result.returncode, 0)

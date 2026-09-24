@@ -4,7 +4,7 @@
 }
 
 https://{$SOPDS_PRIVATE_HOST} {
-    bind {$SOPDS_LAN_IP}
+    bind {$SOPDS_PRIVATE_HOST}
     tls internal
 
     handle_path /static/* {
