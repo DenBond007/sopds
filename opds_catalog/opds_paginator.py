@@ -15,19 +15,15 @@ class Paginator:
         self.calc_data()                   
     
     def calc_data(self):
-        d1_MAXITEMS = self.MAXITEMS
-        self.d1_first_pos = d1_MAXITEMS*(self.page_num-1);
-        self.d1_first_pos = self.d1_first_pos if self.d1_first_pos<self.d1_count else (self.d1_count-1 if self.d1_count else 0)
-        self.d1_last_pos =  d1_MAXITEMS*self.page_num - 1;
-        self.d1_last_pos = self.d1_last_pos if self.d1_last_pos<self.d1_count else (self.d1_count-1 if self.d1_count else 0) 
-        
-        d2_MAXITEMS = self.MAXITEMS - self.d1_last_pos + self.d1_first_pos
-        self.d2_first_pos = d2_MAXITEMS*(self.page_num-1);
-        self.d2_first_pos = self.d2_first_pos if self.d2_first_pos<self.d2_count else (self.d2_count-1 if self.d2_count else 0)
-        self.d2_last_pos =  d2_MAXITEMS*self.page_num - 1;
-        self.d2_last_pos = self.d2_last_pos if self.d2_last_pos<self.d2_count else (self.d2_count-1 if self.d2_count else 0)
-        
-        self.num_pages = self.count//self.MAXITEMS + 1
+        self.num_pages = max(1, (self.count + self.MAXITEMS - 1) // self.MAXITEMS)
+        self.page_num = min(max(1, self.page_num), self.num_pages)
+        # A page is one slice of [directories, books], split at the boundary.
+        start = (self.page_num - 1) * self.MAXITEMS
+        stop = min(start + self.MAXITEMS, self.count)
+        self.d1_first_pos = min(start, self.d1_count)
+        self.d1_last_pos = min(stop, self.d1_count) - 1
+        self.d2_first_pos = max(0, start - self.d1_count)
+        self.d2_last_pos = max(0, stop - self.d1_count) - 1
         self.firstpage = self.page_num - self.HALF_PAGES_LINK
         self.lastpage = self.page_num + self.HALF_PAGES_LINK
         if self.firstpage<1:

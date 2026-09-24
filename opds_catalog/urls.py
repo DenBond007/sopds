@@ -1,5 +1,6 @@
 from django.urls import re_path as url
 from opds_catalog import feeds, dl
+from opds_catalog.middleware import opds_auth_required
 
 app_name='opds_catalog'
 
@@ -44,12 +45,12 @@ urlpatterns = [
 
     url(r'^search/(?P<searchterms>.+)/$',feeds.SearchTypesFeed(), name='searchtypes'),
     
-    url(r'^view_html/(?P<book_id>[0-9]+)/$', dl.ViewHtml, name='view_html'),
-    url(r'^convert/(?P<book_id>[0-9]+)/(?P<convert_type>.+)/$',dl.ConvertFB2, name='convert'),
-    url(r'^download/(?P<book_id>[0-9]+)/(?P<zip_flag>[0-1])/$',dl.Download, name='download'),
-    url(r'^cover/(?P<book_id>[0-9]+)/$',dl.Cover, name='cover'),
-    url(r'^thumb/(?P<book_id>[0-9]+)/$',dl.Thumbnail, name='thumb'),
-    url(r'^thumb/$',dl.Cover, name='covertmpl'),
+    url(r'^view_html/(?P<book_id>[0-9]+)/$', opds_auth_required(dl.ViewHtml), name='view_html'),
+    url(r'^convert/(?P<book_id>[0-9]+)/(?P<convert_type>.+)/$',opds_auth_required(dl.ConvertFB2), name='convert'),
+    url(r'^download/(?P<book_id>[0-9]+)/(?P<zip_flag>[0-1])/$',opds_auth_required(dl.Download), name='download'),
+    url(r'^cover/(?P<book_id>[0-9]+)/$',opds_auth_required(dl.Cover), name='cover'),
+    url(r'^thumb/(?P<book_id>[0-9]+)/$',opds_auth_required(dl.Thumbnail), name='thumb'),
+    url(r'^thumb/$',opds_auth_required(dl.Cover), name='covertmpl'),
         
     url(r'^$',feeds.MainFeed(), name='main'),
 ]

@@ -1,4 +1,6 @@
 import base64
+import binascii
+from functools import wraps
 from django.http import HttpResponse
 from django.contrib import auth
 from django.utils import translation
@@ -42,8 +44,11 @@ class BasicAuthMiddleware(object):
             
         if 'basic' != auth_meth.lower():
             return self.unauthed()
-        auth_data = base64.b64decode(auth_data.strip()).decode('utf-8')
-        username, password = auth_data.split(':',1)            
+        try:
+            auth_data = base64.b64decode(auth_data.strip(), validate=True).decode('utf-8')
+            username, password = auth_data.split(':', 1)
+        except (binascii.Error, UnicodeError, ValueError):
+            return self.unauthed()
 
         user = auth.authenticate(username=username, password=password)
         if user and user.is_active:
@@ -52,6 +57,18 @@ class BasicAuthMiddleware(object):
             return request
 
         return self.unauthed()
+
+
+def opds_auth_required(view):
+    """Check access before file processing or a cached response is reached."""
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if config.SOPDS_AUTH and not request.user.is_authenticated:
+            result = BasicAuthMiddleware().process_request(request)
+            if isinstance(result, HttpResponse):
+                return result
+        return view(request, *args, **kwargs)
+    return wrapped
 
 
 class SOPDSLocaleMiddleware(MiddlewareMixin):

@@ -15,6 +15,21 @@ from opds_catalog.dl import ConvertFB2, getFileDataConv
 
 
 class ConverterSafetyTests(TestCase):
+    def test_new_install_creates_private_temp_directory_and_cleans_output(self):
+        with TemporaryDirectory() as root:
+            temporary = Path(root, 'new-temp')
+            config.SOPDS_TEMP_DIR = str(temporary)
+            converter = Path(root, 'converter')
+            converter.write_text('#!/bin/sh\ncp "$1" "$2"\n')
+            converter.chmod(0o700)
+            config.SOPDS_FB2TOEPUB = str(converter)
+            book = SimpleNamespace(format='fb2', filename='fixture.fb2')
+            with patch('opds_catalog.dl.getFileData', return_value=io.BytesIO(b'book')):
+                with getFileDataConv(book, 'epub') as result:
+                    self.assertEqual(result.read(), b'book')
+            self.assertEqual(list(temporary.iterdir()), [])
+            self.assertEqual(temporary.stat().st_mode & 0o777, 0o700)
+
     def test_timeout_stops_converter_and_removes_its_temporary_files(self):
         with TemporaryDirectory() as parent:
             temporary = Path(parent, 'temporary')

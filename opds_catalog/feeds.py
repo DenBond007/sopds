@@ -1,9 +1,14 @@
+from copy import copy
+
 from django.utils import timezone
+from django.utils.html import escape
 from django.utils.translation import gettext as _
 from django.utils.feedgenerator import Atom1Feed, Enclosure, rfc3339_date
 from django.contrib.syndication.views import Feed
 from django.urls import reverse
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
+from django.http import Http404
+from opds_catalog.request_params import integer_parameter
 from django.db.models import Count, Min
 
 from opds_catalog.models import Book, Catalog, Author, Genre, Series, bookshelf, Counter, lang_menu
@@ -20,9 +25,18 @@ from book_tools.format.mimetype import Mimetype
 from constance import config
 
 
+def html_description(template, values):
+    # Atom escapes XML; an HTML content element needs its own escaping as well.
+    return template % {key: escape(value) for key, value in values.items()}
+
+
 class AuthFeed(Feed):
     request = None
     def __call__(self,request,*args,**kwargs):
+        # URL patterns retain one Feed instance; request state must stay local.
+        return copy(self)._serve(request, *args, **kwargs)
+
+    def _serve(self, request, *args, **kwargs):
         self.request = request
         if config.SOPDS_AUTH:
             if request.user.is_authenticated:
@@ -209,13 +223,12 @@ class CatalogsFeed(AuthFeed):
     subtitle = settings.SUBTITLE
 
     def get_object(self, request, cat_id=None, page=1):
-        if not isinstance(page, int):
-            page = int(page)
+        page = integer_parameter(page)
         page_num = page if page>0 else 1
 
         try:
             if cat_id is not None:
-                cat = Catalog.objects.get(id=cat_id)
+                cat = Catalog.objects.get(id=integer_parameter(cat_id))
             else:
                 cat = Catalog.objects.get(parent__id=cat_id)
         except Catalog.DoesNotExist:
@@ -324,12 +337,12 @@ class CatalogsFeed(AuthFeed):
             if item['ser_no']: s += _("<b>No in Series: </b>%(ser_no)s<br/>")
             s += _("<b>File: </b>%(filename)s<br/><b>File size: </b>%(filesize)s<br/><b>Changes date: </b>%(docdate)s<br/>")
             s +="<p class='book'>%(annotation)s</p>"
-            return s%{'title':item['title'],'filename':item['filename'], 'filesize':item['filesize'],'docdate':item['docdate'],'annotation':item['annotation'],
+            return html_description(s, {'title':item['title'],'filename':item['filename'], 'filesize':item['filesize'],'docdate':item['docdate'],'annotation':item['annotation'],
                       'authors':", ".join(a['full_name'] for a in item['authors']),
                       'genres':", ".join(g['subsection'] for g in item['genres']),
                       'series':", ".join(s['ser'] for s in item['series']),
                       'ser_no': ", ".join(str(s['ser_no']) for s in item['ser_no']),
-                      }
+                      })
                             
 def OpenSearch(request):
     """
@@ -393,8 +406,7 @@ class SearchBooksFeed(AuthFeed):
         return "%s | %s (%s)"%(settings.TITLE,_("Books found"),_("doubles hide") if config.SOPDS_DOUBLES_HIDE else _("doubles show"))    
 
     def get_object(self, request, searchtype="m", searchterms=None, searchterms0=None, page=1):   
-        if not isinstance(page, int):
-            page = int(page)
+        page = integer_parameter(page)
         page_num = page if page>0 else 1
         
         # Поиск книг по подсроке
@@ -448,8 +460,8 @@ class SearchBooksFeed(AuthFeed):
                 books=Book.objects.filter(id=0)  
         # Поиск дубликатов для книги            
         elif searchtype == 'd':
-            book_id = int(searchterms)
-            mbook = Book.objects.get(id=book_id)
+            book_id = integer_parameter(searchterms, minimum=1, exception=Http404)
+            mbook = get_object_or_404(Book, pk=book_id)
             books = Book.objects.filter(title__iexact=mbook.title, authors__in=mbook.authors.all()).exclude(id=book_id).order_by('search_title','-docdate')
                     
         books_for_neighbors = books
@@ -585,13 +597,13 @@ class SearchBooksFeed(AuthFeed):
         s += _("<b>File: </b>%(filename)s<br/><b>File size: </b>%(filesize)s<br/><b>Changes date: </b>%(docdate)s<br/>")
         if item['doubles']: s += _("<b>Doubles count: </b>%(doubles)s<br/>")
         s +="<p class='book'>%(annotation)s</p>"
-        return s%{'title':item['title'],'filename':item['filename'], 'filesize':item['filesize'],'docdate':item['docdate'],
+        return html_description(s, {'title':item['title'],'filename':item['filename'], 'filesize':item['filesize'],'docdate':item['docdate'],
                   'doubles':item['doubles'],'annotation':item['annotation'],
                   'authors':", ".join(a['full_name'] for a in item['authors']),
                   'genres':", ".join(g['subsection'] for g in item['genres']),
                   'series':", ".join(s['ser'] for s in item['series']),
                   'ser_no': ", ".join(str(s['ser_no']) for s in item['ser_no']),
-                  }                        
+                  })
 
 class SelectSeriesFeed(AuthFeed):
     feed_type = opdsFeed
@@ -655,8 +667,7 @@ class SearchAuthorsFeed(AuthFeed):
         return "%s | %s"%(settings.TITLE,_("Authors found"))    
 
     def get_object(self, request, searchterms, searchtype, page=1):
-        if not isinstance(page, int):
-            page = int(page)
+        page = integer_parameter(page)
         page_num = page if page>0 else 1   
 
         if searchtype == 'm':
@@ -726,8 +737,7 @@ class SearchSeriesFeed(AuthFeed):
 
     def get_object(self, request, searchterms, searchtype, page=1):
         self.author_id = None
-        if not isinstance(page, int):
-            page = int(page)
+        page = integer_parameter(page)
         page_num = page if page>0 else 1  
 
         if searchtype == 'm':
@@ -864,7 +874,7 @@ class BooksFeed(AuthFeed):
         }
 
     def get_object(self, request, lang_code=0, chars = None):    
-        self.lang_code = int(lang_code)
+        self.lang_code = integer_parameter(lang_code, choices=lang_menu)
         if chars==None:
             chars=''
         return (len(chars)+1, chars.upper())
@@ -908,7 +918,7 @@ class AuthorsFeed(AuthFeed):
         }
 
     def get_object(self, request, lang_code=0, chars = None):    
-        self.lang_code = int(lang_code)
+        self.lang_code = integer_parameter(lang_code, choices=lang_menu)
         if chars==None:
             chars=''
         return (len(chars)+1, chars.upper())
@@ -952,7 +962,7 @@ class SeriesFeed(AuthFeed):
         }
 
     def get_object(self, request, lang_code=0, chars = None):    
-        self.lang_code = int(lang_code)
+        self.lang_code = integer_parameter(lang_code, choices=lang_menu)
         if chars==None:
             chars=''
         return (len(chars)+1, chars.upper())
@@ -996,10 +1006,7 @@ class GenresFeed(AuthFeed):
         }
 
     def get_object(self, request, section = 0):  
-        if not isinstance(section, int):
-            self.section_id = int(section)
-        else:
-            self.section_id = section
+        self.section_id = integer_parameter(section)
         return self.section_id
         
     def items(self, obj):
@@ -1007,7 +1014,7 @@ class GenresFeed(AuthFeed):
         if section_id==0:
             dataset = Genre.objects.values('section').annotate(section_id=Min('id'), num_book=Count('book')).filter(num_book__gt=0).order_by('section')
         else:
-            section = Genre.objects.get(id=section_id).section
+            section = get_object_or_404(Genre, pk=section_id).section
             dataset = Genre.objects.filter(section=section).annotate(num_book=Count('book')).filter(num_book__gt=0).values().order_by('subsection')       
         return dataset
 

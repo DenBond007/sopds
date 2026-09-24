@@ -1,14 +1,18 @@
 from random import randint
 
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
+from django.core.exceptions import BadRequest
 from django.template.context_processors import csrf
 from django.db.models import Count, Min
 from django.utils.translation import gettext as _
 from django.contrib.auth import authenticate, login, logout, REDIRECT_FIELD_NAME
 from django.contrib.auth.decorators import user_passes_test
+from django.contrib.auth.decorators import login_required
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 from django.views.decorators.vary import vary_on_headers
 from django.urls import reverse, reverse_lazy
-from django.http import JsonResponse
+from django.http import JsonResponse, Http404
 from django.db.models import Q
 from django.http import HttpResponseBadRequest, HttpResponseForbidden
 
@@ -16,6 +20,7 @@ from opds_catalog import models
 from opds_catalog.annotations import annotation_text, enqueue_visible_ids
 from opds_catalog.opdsdb import CAT_INP
 from opds_catalog.prefix_query import prefix_groups
+from opds_catalog.request_params import integer_parameter
 from opds_catalog.models import AnnotationTask, Book, Author, Series, bookshelf, Counter, Catalog, Genre, lang_menu
 from opds_catalog import settings
 from constance import config
@@ -59,12 +64,9 @@ def sopds_processor(request):
             args['bookshelf']=result
         
     books_count = Counter.objects.get_counter(models.counter_allbooks)
-    if books_count:
+    if books_count and (not config.SOPDS_AUTH or request.user.is_authenticated):
         random_id = randint(1,books_count)
-        try:
-            random_book = Book.objects.all()[random_id-1:random_id][0]
-        except Book.DoesNotExist:
-            random_book= None
+        random_book = Book.objects.order_by('pk')[random_id-1:random_id].first()
     else:
         random_book= None
     if random_book:
@@ -83,7 +85,7 @@ def AnnotationStatusView(request):
     if not raw_ids or len(raw_ids) > 60 or any(
             not value.isascii() or not value.isdecimal() for value in raw_ids):
         return HttpResponseBadRequest()
-    ids = {int(value) for value in raw_ids}
+    ids = {integer_parameter(value, minimum=1) for value in raw_ids}
     enqueue_visible_ids(ids)
     result = {}
     for book in Book.objects.filter(pk__in=ids, avail__gt=0).select_related('annotation_task'):
@@ -107,9 +109,11 @@ def SearchBooksView(request):
 
     if request.GET:
         searchtype = request.GET.get('searchtype', 'm')
+        if searchtype not in ('m', 'b', 'a', 's', 'g', 'u', 'd', 'i'):
+            raise BadRequest('Invalid book search type')
         searchterms = request.GET.get('searchterms', '')
         #searchterms0 = int(request.POST.get('searchterms0', ''))
-        page_num = int(request.GET.get('page', '1'))
+        page_num = integer_parameter(request.GET.get('page', '1'))
         page_num = page_num if page_num>0 else 1
         
         #if (len(searchterms)<3) and (searchtype in ('m', 'b', 'e')):
@@ -183,22 +187,18 @@ def SearchBooksView(request):
         # Поиск дубликатов для книги            
         elif searchtype == 'd':
             #try:
-            book_id = int(searchterms)
-            mbook = Book.objects.get(id=book_id)
+            book_id = integer_parameter(searchterms, minimum=1, exception=Http404)
+            mbook = get_object_or_404(Book, pk=book_id)
             books = Book.objects.filter(title=mbook.title, authors__in=mbook.authors.all()).exclude(id=book_id).distinct().order_by('-docdate')
             args['breadcrumbs'] = [_('Books'),_('Doubles for book'),mbook.title]
             args['searchobject'] = 'title'
             
         # Поиск книги по ID. Хотел найти еще и дубликаты к книге, но почему-то не работает запрос правильно. Ума не приложу почему.    
         elif searchtype == 'i':
-            try:
-                book_id = int(searchterms)
-                #mbook = Book.objects.get(id=book_id)
-            except:
-                book_id = 0
-                #mbook = None
+            book_id = integer_parameter(searchterms, minimum=1, exception=Http404)
+            mbook = get_object_or_404(Book, pk=book_id)
             books = Book.objects.filter(id=book_id) 
-            args['breadcrumbs'] = [_('Books'),books[0].title]
+            args['breadcrumbs'] = [_('Books'), mbook.title]
             #books = Book.objects.filter(title=mbook.title, authors__in=mbook.authors.all()).distinct().order_by('-docdate')                
             #args['breadcrumbs'] = [_('Books'),mbook.title]
             args['searchobject'] = 'title'
@@ -286,9 +286,11 @@ def SearchSeriesView(request):
 
     if request.GET:
         searchtype = request.GET.get('searchtype', 'm')
+        if searchtype not in ('m', 'b', 'e'):
+            raise BadRequest('Invalid series search type')
         searchterms = request.GET.get('searchterms', '')
         #searchterms0 = int(request.POST.get('searchterms0', ''))
-        page_num = int(request.GET.get('page', '1'))
+        page_num = integer_parameter(request.GET.get('page', '1'))
         page_num = page_num if page_num>0 else 1
         
         if searchtype == 'm':
@@ -332,9 +334,11 @@ def SearchAuthorsView(request):
 
     if request.GET:
         searchtype = request.GET.get('searchtype', 'm')
+        if searchtype not in ('m', 'b', 'e'):
+            raise BadRequest('Invalid author search type')
         searchterms = request.GET.get('searchterms', '')
         #searchterms0 = int(request.POST.get('searchterms0', ''))
-        page_num = int(request.GET.get('page', '1'))
+        page_num = integer_parameter(request.GET.get('page', '1'))
         page_num = page_num if page_num>0 else 1
         
         if searchtype == 'm':
@@ -373,7 +377,9 @@ def CatalogsView(request):
 
     if request.GET:
         cat_id = request.GET.get('cat', None)
-        page_num = int(request.GET.get('page', '1'))   
+        if cat_id is not None:
+            cat_id = integer_parameter(cat_id)
+        page_num = integer_parameter(request.GET.get('page', '1'))
     else:
         cat_id = None
         page_num = 1
@@ -436,7 +442,7 @@ def BooksView(request):
     args = {}
 
     if request.GET:
-        lang_code = int(request.GET.get('lang', '0'))  
+        lang_code = integer_parameter(request.GET.get('lang', '0'), choices=lang_menu)
         chars = request.GET.get('chars', '')
     else:
         lang_code = 0
@@ -459,7 +465,7 @@ def AuthorsView(request):
     args = {}
 
     if request.GET:
-        lang_code = int(request.GET.get('lang', '0'))  
+        lang_code = integer_parameter(request.GET.get('lang', '0'), choices=lang_menu)
         chars = request.GET.get('chars', '')
     else:
         lang_code = 0
@@ -482,7 +488,7 @@ def SeriesView(request):
     args = {}
 
     if request.GET:
-        lang_code = int(request.GET.get('lang', '0'))  
+        lang_code = integer_parameter(request.GET.get('lang', '0'), choices=lang_menu)
         chars = request.GET.get('chars', '')
     else:
         lang_code = 0
@@ -505,7 +511,7 @@ def GenresView(request):
     args = {}
 
     if request.GET:
-        section_id = int(request.GET.get('section', '0'))  
+        section_id = integer_parameter(request.GET.get('section', '0'))
     else:
         section_id = 0
         
@@ -513,7 +519,7 @@ def GenresView(request):
         items = Genre.objects.values('section').annotate(section_id=Min('id'), num_book=Count('book')).filter(num_book__gt=0).order_by('section')
         args['breadcrumbs'] =  [_('Genres'),_('Select')]
     else:
-        section = Genre.objects.get(id=section_id).section
+        section = get_object_or_404(Genre, pk=section_id).section
         items = Genre.objects.filter(section=section).annotate(num_book=Count('book')).filter(num_book__gt=0).values().order_by('subsection')   
         args['breadcrumbs'] =  [_('Genres'),_('Select'),section]   
           
@@ -526,21 +532,23 @@ def GenresView(request):
     return render(request,'sopds_selectgenres.html', args)
 
 @vary_on_headers("HTTP_ACCEPT_LANGUAGE")
-@sopds_login(url='web:login')
+@require_POST
+@login_required(login_url='web:login')
 def BSDelView(request):
-    if request.GET:
-        book = request.GET.get('book', None)
-    else:
-        book = None
-       
-    book = int(book)
+    try:
+        book = int(request.POST.get('book', ''))
+        if not 0 < book <= 2147483647:
+            raise ValueError
+    except (ValueError, TypeError):
+        return HttpResponseBadRequest()
        
     bookshelf.objects.filter(user=request.user, book=book).delete()
     
     return redirect("%s?searchtype=u"%reverse("web:searchbooks"))
 
 @vary_on_headers("HTTP_ACCEPT_LANGUAGE")
-@sopds_login(url='web:login')
+@require_POST
+@login_required(login_url='web:login')
 def BSClearView(request):
     bookshelf.objects.filter(user=request.user).delete()
     return redirect("%s?searchtype=u" % reverse("web:searchbooks"))
@@ -561,6 +569,9 @@ def LoginView(request):
         return render(request, 'sopds_login.html', args)
     
     next_url = request.GET.get('next',reverse("web:main"))
+    if not url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        next_url = reverse('web:main')
 
     user = authenticate(username=username, password=password)
     if user is not None:
@@ -580,7 +591,8 @@ def LoginView(request):
     #return render(request, 'sopds_login.html', args)
 
 @vary_on_headers("HTTP_ACCEPT_LANGUAGE")
-@sopds_login(url='web:login')
+@require_POST
+@login_required(login_url='web:login')
 def LogoutView(request):
     logout(request)
     args = {}

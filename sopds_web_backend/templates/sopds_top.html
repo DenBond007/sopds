@@ -16,7 +16,10 @@
         {% if sopds_auth %}
         <ul class="menu" style="font-size:90%;">
             {% if user.is_authenticated %}
-                <li><a href="{% url "web:logout" %}"><i class="fi-torsos"></i>{% trans "Logout" %} ({{ user.username }})</a></li>
+                <li><form method="post" action="{% url 'web:logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="button clear"><i class="fi-torsos"></i>{% trans "Logout" %} ({{ user.username }})</button>
+                </form></li>
             {% if user.is_superuser %}
             	<li><a href="{% url "admin:index" %}"><i class="fi-widget"></i>{% trans "Settings" %}</a></li>
             {% endif %}	                
@@ -28,4 +31,3 @@
     </div>
 
 </div>
-

@@ -15,7 +15,7 @@
        $('#BookModal').foundation('open');
     }
     function del_bsbook(b_id, b_t) {
-       $('#DeleteBook_btnYes').attr("href","{% url "web:bsdel" %}?book="+b_id);
+       $('#DeleteBook_id').val(b_id);
        $('#DeleteBook_image').attr("src","{% url "opds:covertmpl" %}"+b_id+"/");
        $('#DeleteBook_title').text(b_t);
        $('#DeleteBookModal').foundation('open');
@@ -33,8 +33,12 @@
   </td>
   </tr>
   </table>
-  <p class="text-center"><a href="#" class="secondary button" id="DeleteBook_btnYes">{% trans "Delete" %}</a>
-                         &nbsp;&nbsp;&nbsp;<a class="close button" data-close>{% trans "Cancel" %}</a></p>
+  <form method="post" action="{% url 'web:bsdel' %}">
+    {% csrf_token %}
+    <input type="hidden" name="book" id="DeleteBook_id">
+    <button type="submit" class="secondary button" id="DeleteBook_btnYes">{% trans "Delete" %}</button>
+    <button type="button" class="close button" data-close>{% trans "Cancel" %}</button>
+  </form>
   <button class="close-button" data-close aria-label="Close modal" type="button">
     <span aria-hidden="true">&times;</span>
   </button>
@@ -44,8 +48,11 @@
  <div id="ConfirmModal" class="reveal tiny text-center" data-reveal>
   <h5 id="ConfirmModalTitle">{% trans "Confirm to clear your bookshelf." %}</h5>
   <p></p>
-  <p class="text-center"><a href="{% url "web:bsclear" %}" class="secondary button" id="Confirm_btnYes">{% trans "Clear" %}</a>
-                         &nbsp;&nbsp;&nbsp;<a class="close button" data-close>{% trans "Cancel" %}</a></p>
+  <form method="post" action="{% url 'web:bsclear' %}">
+    {% csrf_token %}
+    <button type="submit" class="secondary button" id="Confirm_btnYes">{% trans "Clear" %}</button>
+    <button type="button" class="close button" data-close>{% trans "Cancel" %}</button>
+  </form>
   <button class="close-button" data-close aria-label="Close modal" type="button">
     <span aria-hidden="true">&times;</span>
   </button>
@@ -96,7 +103,7 @@
         <b>{{ b.title }}</b> &nbsp;&nbsp;&nbsp;&nbsp;
         {% if isbookshelf %}
             <i>
-		        <a href="#" onclick="del_bsbook({{ b.id }},'{{b.title}}');">
+		        <a href="#" onclick="del_bsbook({{ b.id }},'{{ b.title|escapejs }}');">
 			        <span class="secondary label small">&nbsp;{%trans "Delete from bookshelf" %}&nbsp;</span>
 				</a>
 			</i>

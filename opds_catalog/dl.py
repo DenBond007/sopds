@@ -14,6 +14,8 @@ from pathlib import Path
 
 from django.http import HttpResponse, Http404, FileResponse, StreamingHttpResponse
 from django.views.decorators.cache import cache_page
+from django.shortcuts import get_object_or_404
+from opds_catalog.request_params import integer_parameter
 
 from opds_catalog.models import Book, bookshelf
 from opds_catalog import settings, utils, opdsdb, fb2parse
@@ -173,6 +175,12 @@ def getFileDataZip(book):
         raise
 
 
+def conversion_directory(prefix):
+    root = Path(config.SOPDS_TEMP_DIR)
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return tempfile.TemporaryDirectory(prefix=prefix, dir=root)
+
+
 def getFileDataConv(book, convert_type):
     if book.format != 'fb2':
         return None
@@ -187,9 +195,7 @@ def getFileDataConv(book, convert_type):
     if not book_data:
         return None
 
-    with book_data, tempfile.TemporaryDirectory(
-        prefix='sopds-convert-', dir=config.SOPDS_TEMP_DIR
-    ) as workdir:
+    with book_data, conversion_directory('sopds-convert-') as workdir:
         source_path = os.path.join(workdir, 'source.fb2')
         output_path = os.path.join(workdir, 'output.' + convert_type)
         with open(source_path, 'wb') as source_file:
@@ -223,7 +229,7 @@ def getFileDataMobi(book):
 
 def Download(request, book_id, zip_flag):
     """ Загрузка файла книги """
-    book = Book.objects.get(id=book_id)
+    book = get_object_or_404(Book, pk=integer_parameter(book_id, minimum=1, exception=Http404))
 
     if config.SOPDS_AUTH:
         if not request.user.is_authenticated:
@@ -301,16 +307,14 @@ def get_book_content(book):
             raise Http404
 
 def ViewHtml(request, book_id):
-    book = Book.objects.get(id=book_id)
+    book = get_object_or_404(Book, pk=integer_parameter(book_id, minimum=1, exception=Http404))
     if book.format.lower() != "fb2":
         raise Http404
     source_path = resolve_book_source_path(book)
     member_name = None if book.cat_type == opdsdb.CAT_NORMAL else book.filename
     converter_path = Path(__file__).resolve().parent.parent / 'convert' / 'fb2_to_html.py'
 
-    with tempfile.TemporaryDirectory(
-        prefix='sopds-html-', dir=config.SOPDS_TEMP_DIR
-    ) as workdir:
+    with conversion_directory('sopds-html-') as workdir:
         fb2_path = Path(workdir, 'source.fb2')
         html_path = Path(workdir, 'output.html')
         try:
@@ -343,16 +347,22 @@ def ViewHtml(request, book_id):
             with html_path.open('rb') as output_file:
                 _write_styled_html(output_file, response_file)
             response_file.seek(0)
-            return FileResponse(response_file, content_type='text/html; charset=utf-8')
+            response = FileResponse(response_file, content_type='text/html; charset=utf-8')
+            response['X-Frame-Options'] = 'SAMEORIGIN'
+            response['Content-Security-Policy'] = (
+                "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; "
+                "base-uri 'none'; form-action 'none'"
+            )
+            return response
         except BaseException:
             response_file.close()
             raise
 
 # Новая версия (0.42) процедуры извлечения обложек из файлов книг fb2, epub, mobi
 @cache_page(config.SOPDS_CACHE_TIME)
-def Cover(request, book_id, thumbnail=False):
+def Cover(request, book_id=None, thumbnail=False):
     """ Загрузка обложки """
-    book = Book.objects.get(id=book_id)
+    book = get_object_or_404(Book, pk=integer_parameter(book_id, minimum=1, exception=Http404))
     response = HttpResponse()
     full_path = resolve_book_source_path(book)
 
@@ -394,7 +404,7 @@ def Cover(request, book_id, thumbnail=False):
 # Старая версия (до 0.41) процедуры извлечения обложек из файлов книг только fb2
 def Cover0(request, book_id, thumbnail = False):
     """ Загрузка обложки """
-    book = Book.objects.get(id=book_id)
+    book = get_object_or_404(Book, pk=integer_parameter(book_id, minimum=1, exception=Http404))
     response = HttpResponse()
     c0=0
     full_path = resolve_book_source_path(book)
@@ -444,7 +454,7 @@ def Thumbnail(request, book_id):
 
 def ConvertFB2(request, book_id, convert_type):
     """ Выдача файла книги после конвертации в EPUB или mobi """
-    book = Book.objects.get(id=book_id)
+    book = get_object_or_404(Book, pk=integer_parameter(book_id, minimum=1, exception=Http404))
     if book.format != 'fb2':
         raise Http404
 

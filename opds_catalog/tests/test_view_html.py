@@ -13,6 +13,9 @@ from opds_catalog import dl, opdsdb
 
 
 class ViewHtmlTests(TestCase):
+    def setUp(self):
+        config.SOPDS_AUTH = False
+
     def test_style_insertion_crosses_read_boundary(self):
         source = b'<html><head></head><body>book</body></html>'
         output = BytesIO()

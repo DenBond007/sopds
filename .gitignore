@@ -9,6 +9,7 @@ venv
 .venv/
 .venv-*/
 .local/
+/tmp/
 .env
 .env.*
 !.env.example

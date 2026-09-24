@@ -5,6 +5,7 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlsplit
 
 FB_NS = "http://www.gribuser.ru/xml/fictionbook/2.0"
 XLINK_NS = "http://www.w3.org/1999/xlink"
@@ -156,12 +157,20 @@ def render_inline(elem, binaries, note_backrefs=None, current_anchor=None):
                 f'class="note-ref">{text}{children}</a>{tail}'
             )
 
+        try:
+            allowed = urlsplit(href).scheme.lower() in ('http', 'https', 'mailto')
+        except ValueError:
+            allowed = False
+        if not allowed:
+            return f'{text}{children}{tail}'
         return f'<a href="{html.escape(href)}">{text}{children}</a>{tail}'
 
     if tag == "image":
         href = elem.attrib.get(f"{{{XLINK_NS}}}href", "")
         img_id = href.lstrip("#")
-        src = binaries.get(img_id, img_id)
+        src = binaries.get(img_id)
+        if not src:
+            return tail
 
         return (
             f'<img src="{html.escape(src)}" '
