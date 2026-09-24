@@ -627,3 +627,12 @@ M05.2a: тест повторного scan дополнен проверкой I
 доступности книги. Вместе с проверками изменённой обычной, ZIP и INPX книги
 4/4 теста прошли, exit 0, замечаний Django нет; test-БД удалена. Лог:
 `.local/logs/m05-repeat-scan.log`.
+
+M05.2b: smoke-тест с `DEBUG=False` на временной искусственной книге проверил
+web-поиск, OPDS-поиск, потоковое скачивание, admin index и список жанров.
+1/1 тест прошёл, exit 0; test-БД удалена. С `SOPDS_DEBUG=0` отдельный
+`manage.py check` сообщил 0 замечаний; модуль настроек подтвердил
+`DEBUG=False`. Первую прямую проверку `django.conf.settings` без
+`DJANGO_SETTINGS_MODULE` отклонил Django; повтор с явным модулем прошёл —
+это ошибка диагностической команды, а не приложения. Логи:
+`.local/logs/m05-candidate-smoke.log`, `.local/logs/m05-debug-off-check.log`.
