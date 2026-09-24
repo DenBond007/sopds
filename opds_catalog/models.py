@@ -57,6 +57,41 @@ class Book(models.Model):
     genres = models.ManyToManyField('Genre', through='bgenre')
     series = models.ManyToManyField('Series', through='bseries')  
 
+
+class AnnotationTask(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_RUNNING = 'running'
+    STATUS_READY = 'ready'
+    STATUS_MISSING = 'missing'
+    STATUS_ERROR = 'error'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_RUNNING, 'Running'),
+        (STATUS_READY, 'Ready'),
+        (STATUS_MISSING, 'Missing'),
+        (STATUS_ERROR, 'Error'),
+    ]
+
+    book = models.OneToOneField(Book, primary_key=True, on_delete=models.CASCADE,
+                                related_name='annotation_task')
+    status = models.CharField(max_length=8, choices=STATUS_CHOICES,
+                              default=STATUS_PENDING)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    lease_token = models.UUIDField(null=True, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    source_fingerprint = models.CharField(max_length=128, blank=True, default='')
+    last_error = models.CharField(max_length=160, blank=True, default='')
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['status', 'next_attempt_at'],
+                         name='annotation_pending_idx'),
+            models.Index(fields=['status', 'lease_until'],
+                         name='annotation_lease_idx'),
+        ]
+
 class Catalog(models.Model):
     parent = models.ForeignKey('self', null=True, db_index=True, on_delete=models.CASCADE)
     cat_name = models.CharField(max_length=SIZE_CAT_CATNAME, db_index=True)

@@ -1,12 +1,12 @@
 from django.contrib.auth import get_user_model
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
 
 class ScanMetadataMigrationTests(TransactionTestCase):
     old = ('opds_catalog', '0001_initial')
-    new = ('opds_catalog', '0004_book_last_seen_scan_id')
+    new = ('opds_catalog', '0005_annotation_task')
 
     def test_existing_book_and_shelf_keep_ids(self):
         executor = MigrationExecutor(connection)
@@ -34,8 +34,15 @@ class ScanMetadataMigrationTests(TransactionTestCase):
         NewBook = new_apps.get_model('opds_catalog', 'Book')
         NewCatalog = new_apps.get_model('opds_catalog', 'Catalog')
         NewShelf = new_apps.get_model('opds_catalog', 'bookshelf')
+        AnnotationTask = new_apps.get_model('opds_catalog', 'AnnotationTask')
         migrated = NewBook.objects.get(pk=book_id)
         self.assertIsNone(migrated.source_mtime_ns)
         self.assertIsNone(migrated.last_seen_scan_id)
         self.assertIsNone(NewCatalog.objects.get(pk=catalog.pk).source_mtime_ns)
         self.assertEqual(NewShelf.objects.get(pk=shelf_id).book_id, book_id)
+        self.assertEqual(AnnotationTask.objects.count(), 0)
+        task = AnnotationTask.objects.create(book_id=book_id)
+        self.assertEqual(task.status, 'pending')
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                AnnotationTask.objects.create(book_id=book_id)
