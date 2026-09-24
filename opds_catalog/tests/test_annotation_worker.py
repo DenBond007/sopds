@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from constance import config
 from opds_catalog import opdsdb
-from opds_catalog.annotation_worker import claim_task, process_one
+from opds_catalog.annotation_worker import process_one
 from opds_catalog.annotation_extractor import extract
 from opds_catalog.models import AnnotationTask, Book
 
@@ -46,15 +46,34 @@ class AnnotationWorkerTests(TestCase):
         self.assertEqual(self.book.annotation, 'Saved text')
         self.assertEqual(extract.call_args.args, (self.book.pk, 'fingerprint'))
 
-    def test_expired_running_lease_is_reclaimed_after_restart(self):
+    @patch('opds_catalog.annotation_worker.source_stat', return_value=(1, 2, 3, 4))
+    @patch('opds_catalog.annotation_worker.run_extractor', return_value={
+        'status': 'ready', 'annotation': 'Recovered', 'fingerprint': 'new'})
+    def test_expired_running_lease_is_reclaimed_after_restart(self, _extract, _stat):
         self.task.status = AnnotationTask.STATUS_RUNNING
         self.task.lease_until = timezone.now() - timedelta(seconds=1)
         self.task.save(update_fields=['status', 'lease_until'])
-        claimed = claim_task()
-        self.assertEqual(claimed.pk, self.book.pk)
-        self.assertEqual(claimed.status, AnnotationTask.STATUS_RUNNING)
-        self.assertIsNotNone(claimed.lease_token)
-        self.assertEqual(claimed.attempts, 1)
+        self.assertTrue(process_one())
+        self.task.refresh_from_db()
+        self.book.refresh_from_db()
+        self.assertEqual(self.task.status, AnnotationTask.STATUS_READY)
+        self.assertEqual(self.task.attempts, 1)
+        self.assertEqual(self.book.annotation, 'Recovered')
+        self.assertIsNone(self.task.lease_token)
+
+    @patch('opds_catalog.annotation_worker.source_stat', return_value=(1, 2, 3, 4))
+    @patch('opds_catalog.annotation_worker.run_extractor')
+    def test_old_lease_cannot_write_after_new_claim(self, extract, _stat):
+        def reclaimed(*_args):
+            AnnotationTask.objects.filter(pk=self.book.pk).update(
+                lease_token='00000000-0000-0000-0000-000000000001')
+            return {'status': 'ready', 'annotation': 'Stale', 'fingerprint': 'old'}
+        extract.side_effect = reclaimed
+        self.assertTrue(process_one())
+        self.task.refresh_from_db()
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.annotation, '')
+        self.assertEqual(self.task.status, AnnotationTask.STATUS_RUNNING)
 
     @patch('opds_catalog.annotation_worker.source_stat', return_value=(1, 2, 3, 4))
     @patch('opds_catalog.annotation_worker.run_extractor')
@@ -152,3 +171,40 @@ class AnnotationExtractionIntegrationTests(TransactionTestCase):
             self.assertEqual(task.status, AnnotationTask.STATUS_PENDING)
             self.assertEqual(task.attempts, 1)
             self.assertGreater(task.next_attempt_at, timezone.now())
+
+    def test_book_without_description_is_missing(self):
+        source = Path(__file__).parent / 'data' / '262001.fb2'
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            with zipfile.ZipFile(Path(root, 'books.zip'), 'w') as archive:
+                archive.write(source, '262001.fb2')
+            catalog = opdsdb.addcattree('index.inpx/books.inp/books.zip')
+            book = opdsdb.addbook(
+                '262001.fb2', 'index.inpx/books.inp/books.zip', catalog,
+                'fb2', 'Test', '', '', 'en', 100, opdsdb.CAT_INP,
+            )
+            task = AnnotationTask.objects.create(book=book)
+            self.assertTrue(process_one())
+            book.refresh_from_db()
+            task.refresh_from_db()
+            self.assertEqual(book.annotation, '')
+            self.assertEqual(task.status, AnnotationTask.STATUS_MISSING)
+
+    def test_annotation_source_limit_is_job_error_not_catalog_deletion(self):
+        with TemporaryDirectory() as root:
+            config.SOPDS_ROOT_LIB = root
+            with zipfile.ZipFile(Path(root, 'books.zip'), 'w') as archive:
+                archive.writestr('big.fb2', b'A' * (16 * 1024 * 1024 + 1),
+                                 compress_type=zipfile.ZIP_DEFLATED)
+            catalog = opdsdb.addcattree('index.inpx/books.inp/books.zip')
+            book = opdsdb.addbook(
+                'big.fb2', 'index.inpx/books.inp/books.zip', catalog,
+                'fb2', 'Test', '', '', 'en', 100, opdsdb.CAT_INP,
+            )
+            task = AnnotationTask.objects.create(book=book)
+            self.assertTrue(process_one())
+            book.refresh_from_db()
+            task.refresh_from_db()
+            self.assertEqual(book.avail, 2)
+            self.assertEqual(task.status, AnnotationTask.STATUS_PENDING)
+            self.assertEqual(task.last_error, 'ValueError')

@@ -72,13 +72,13 @@ def run_extractor(book_id, previous_fingerprint):
         os.killpg(process.pid, signal.SIGKILL)
         process.communicate()
         raise TimeoutError('annotation extraction timed out')
-    if process.returncode or len(output) > 11000:
+    if process.returncode or len(output) > 25000:
         raise RuntimeError('annotation extractor failed')
     result = json.loads(output)
-    if result.get('status') == 'error':
-        raise RuntimeError(str(result.get('error', 'extractor error'))[:160])
-    if result.get('status') not in ('ready', 'missing', 'unchanged'):
+    if result.get('status') not in ('ready', 'missing', 'unchanged', 'error'):
         raise RuntimeError('invalid extractor result')
+    if result['status'] == 'error':
+        result['error'] = str(result.get('error', 'extractor error'))[:160]
     return result
 
 
@@ -93,10 +93,9 @@ def process_one():
             raise ValueError('book is not an available INPX item')
         before = source_stat(book)
         result = run_extractor(book.pk, task.source_fingerprint)
-        after = source_stat(book)
     except Exception as exc:
         result = {'status': 'error', 'error': type(exc).__name__}
-        before = after = None
+        before = None
     with transaction.atomic():
         current = AnnotationTask.objects.select_for_update().filter(pk=task.pk).first()
         if current is None:
@@ -106,10 +105,18 @@ def process_one():
         current.lease_token = None
         current.lease_until = None
         locked_book = Book.objects.select_for_update().filter(pk=book.pk).first()
+        same_book = (locked_book is not None and
+                     (locked_book.path, locked_book.filename, locked_book.cat_type,
+                      locked_book.avail) == identity)
+        if before is not None and same_book:
+            try:
+                source_changed = source_stat(locked_book) != before
+            except Exception:
+                source_changed = True
+        else:
+            source_changed = before is not None
         if (locked_book is None or
-                (locked_book.path, locked_book.filename, locked_book.cat_type,
-                 locked_book.avail) != identity or
-                (before is not None and before != after)):
+                not same_book or source_changed):
             current.status = AnnotationTask.STATUS_PENDING
             current.attempts = 0
             current.next_attempt_at = timezone.now()

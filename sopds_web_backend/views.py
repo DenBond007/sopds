@@ -14,6 +14,7 @@ from django.http import HttpResponseBadRequest, HttpResponseForbidden
 
 from opds_catalog import models
 from opds_catalog.annotations import annotation_text, enqueue_visible_ids
+from opds_catalog.opdsdb import CAT_INP
 from opds_catalog.prefix_query import prefix_groups
 from opds_catalog.models import AnnotationTask, Book, Author, Series, bookshelf, Counter, Catalog, Genre, lang_menu
 from opds_catalog import settings
@@ -231,7 +232,7 @@ def SearchBooksView(request):
             ser_no = [{'ser_no': item.ser_no} for item in row.bseries_set.all()]
             p = {'doubles':0, 'lang_code': row.lang_code, 'filename': row.filename, 'path': row.path, 'shortpath': shortpath, \
                   'registerdate': row.registerdate, 'id': row.id, 'annotation': annotation_text(row.annotation), \
-                  'annotation_pending': row.cat_type == 3 and row.avail > 0, \
+                  'annotation_pending': row.cat_type == CAT_INP and row.avail > 0, \
                   'docdate': row.docdate, 'lang': row.lang, 'format': row.format, 'title': row.title, 'filesize': row.filesize,\
                   'authors': authors, 'genres': genres, 'series': series, 'ser_no': ser_no,\
                   'readtime':row.bookshelf_set.filter(user=request.user).values('readtime') if config.SOPDS_AUTH else None
