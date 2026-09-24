@@ -48,6 +48,8 @@ class ScanDataSafetyTests(TestCase):
             book_id = book.pk
             catalog_id = book.catalog_id
             first_scan_id = book.last_seen_scan_id
+            author_links = list(book.bauthor_set.values_list('id', 'author_id'))
+            genre_links = list(book.bgenre_set.values_list('id', 'genre_id'))
             user = User.objects.create_user('repeat_scan', password='test-password')
             shelf = bookshelf.objects.create(user=user, book=book)
 
@@ -57,6 +59,11 @@ class ScanDataSafetyTests(TestCase):
         self.assertEqual(Book.objects.count(), 1)
         self.assertEqual(Book.objects.get(filename=fixture.name).pk, book_id)
         self.assertEqual(Book.objects.get(pk=book_id).catalog_id, catalog_id)
+        self.assertEqual(Book.objects.get(pk=book_id).avail, 2)
+        self.assertEqual(list(Book.objects.get(pk=book_id).bauthor_set.values_list(
+            'id', 'author_id')), author_links)
+        self.assertEqual(list(Book.objects.get(pk=book_id).bgenre_set.values_list(
+            'id', 'genre_id')), genre_links)
         self.assertEqual(bookshelf.objects.get(pk=shelf.pk).book_id, book_id)
         self.assertEqual(scanner.books_skipped, 1)
         self.assertEqual(scanner.books_updated, 0)
