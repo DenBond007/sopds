@@ -13,6 +13,7 @@ from django.db.models import Count, Min
 
 from opds_catalog.models import Book, Catalog, Author, Genre, Series, bookshelf, Counter, lang_menu
 from opds_catalog.annotations import annotation_text, enqueue_visible_ids
+from opds_catalog.book_queries import books_in_series
 from opds_catalog import models
 from opds_catalog.prefix_query import prefix_groups
 from opds_catalog import settings
@@ -234,11 +235,11 @@ class CatalogsFeed(AuthFeed):
         except Catalog.DoesNotExist:
             cat = None
         
-        catalogs_list = Catalog.objects.filter(parent=cat).order_by("cat_name")
+        catalogs_list = Catalog.objects.filter(parent=cat).order_by('cat_name', 'pk')
         catalogs_count = catalogs_list.count()
         # prefetch_related on sqlite on items >999 therow error "too many SQL variables"
         #books_list = Book.objects.filter(catalog=cat).prefetch_related('authors','genres','series').order_by("title")
-        books_list = Book.objects.filter(catalog=cat).order_by("search_title")
+        books_list = Book.objects.filter(catalog=cat).order_by('search_title', 'pk')
         books_count = books_list.count()
         
         # Получаем результирующий список
@@ -412,22 +413,22 @@ class SearchBooksFeed(AuthFeed):
         # Поиск книг по подсроке
         if  searchtype == 'm':
             #books = Book.objects.extra(where=["upper(title) like %s"], params=["%%%s%%"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title__contains=searchterms.upper()).order_by('search_title','-docdate')
+            books = Book.objects.filter(search_title__contains=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
         # Поиск книг по начальной подстроке
         elif searchtype == 'b':
             #books = Book.objects.extra(where=["upper(title) like %s"], params=["%s%%"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title__startswith=searchterms.upper()).order_by('search_title','-docdate')
+            books = Book.objects.filter(search_title__startswith=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
         # Поиск книг по точному совпадению наименования
         elif searchtype == 'e':
             #books = Book.objects.extra(where=["upper(title)=%s"], params=["%s"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title=searchterms.upper()).order_by('search_title','-docdate')
+            books = Book.objects.filter(search_title=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
         # Поиск книг по автору
         elif searchtype == 'a':
             try:
                 author_id = int(searchterms)
             except:
                 author_id = 0
-            books = Book.objects.filter(authors=author_id).order_by('search_title','-docdate')
+            books = Book.objects.filter(authors=author_id).distinct().order_by('search_title', '-docdate', 'pk')
         # Поиск книг по серии
         elif searchtype == 's':
             try:
@@ -435,7 +436,7 @@ class SearchBooksFeed(AuthFeed):
             except:
                 ser_id = 0
             #books = Book.objects.filter(series=ser_id).order_by('search_title','-docdate')
-            books = Book.objects.filter(series=ser_id).order_by('bseries__ser_no', 'search_title', '-docdate')
+            books = books_in_series(ser_id)
         # Поиск книг по автору и серии
         elif searchtype == "as":
             try:
@@ -444,25 +445,25 @@ class SearchBooksFeed(AuthFeed):
             except:
                 ser_id = 0
                 author_id = 0 
-            books = Book.objects.filter(authors=author_id, series=ser_id if ser_id else None).order_by('bseries__ser_no', 'search_title', '-docdate')
+            books = books_in_series(ser_id if ser_id else None, author_id=author_id)
         # Поиск книг по жанру
         elif searchtype == 'g':
             try:
                 genre_id = int(searchterms)
             except:
                 genre_id = 0
-            books = Book.objects.filter(genres=genre_id).order_by('search_title','-docdate')    
+            books = Book.objects.filter(genres=genre_id).distinct().order_by('search_title', '-docdate', 'pk')
         # Поиск книг на книжной полке            
         elif searchtype == 'u':
             if config.SOPDS_AUTH:
-                books = Book.objects.filter(bookshelf__user=request.user).order_by('-bookshelf__readtime')
+                books = Book.objects.filter(bookshelf__user=request.user).order_by('-bookshelf__readtime', 'pk')
             else:
                 books=Book.objects.filter(id=0)  
         # Поиск дубликатов для книги            
         elif searchtype == 'd':
             book_id = integer_parameter(searchterms, minimum=1, exception=Http404)
             mbook = get_object_or_404(Book, pk=book_id)
-            books = Book.objects.filter(title__iexact=mbook.title, authors__in=mbook.authors.all()).exclude(id=book_id).order_by('search_title','-docdate')
+            books = Book.objects.filter(title__iexact=mbook.title, authors__in=mbook.authors.all()).exclude(id=book_id).distinct().order_by('search_title', '-docdate', 'pk')
                     
         books_for_neighbors = books
         books = books.prefetch_related('authors', 'genres', 'series', 'bseries_set')
@@ -671,11 +672,11 @@ class SearchAuthorsFeed(AuthFeed):
         page_num = page if page>0 else 1   
 
         if searchtype == 'm':
-            authors = Author.objects.filter(search_full_name__contains=searchterms.upper()).order_by("search_full_name")
+            authors = Author.objects.filter(search_full_name__contains=searchterms.upper()).order_by('search_full_name', 'pk')
         elif searchtype == 'b':
-            authors = Author.objects.filter(search_full_name__startswith=searchterms.upper()).order_by("search_full_name") 
+            authors = Author.objects.filter(search_full_name__startswith=searchterms.upper()).order_by('search_full_name', 'pk')
         elif searchtype == 'e':
-            authors = Author.objects.filter(search_full_name=searchterms.upper()).order_by("search_full_name")
+            authors = Author.objects.filter(search_full_name=searchterms.upper()).order_by('search_full_name', 'pk')
             
         # Создаем результирующее множество
         authors_count = authors.count()
@@ -753,7 +754,7 @@ class SearchSeriesFeed(AuthFeed):
                 self.author_id = None
             series = Series.objects.filter(book__authors=self.author_id)
             
-        series = series.annotate(count_book=Count('book')).distinct().order_by('search_ser')  
+        series = series.annotate(count_book=Count('book')).distinct().order_by('search_ser', 'pk')
         
         # Создаем результирующее множество
         series_count = series.count()
@@ -1015,7 +1016,7 @@ class GenresFeed(AuthFeed):
             dataset = Genre.objects.values('section').annotate(section_id=Min('id'), num_book=Count('book')).filter(num_book__gt=0).order_by('section')
         else:
             section = get_object_or_404(Genre, pk=section_id).section
-            dataset = Genre.objects.filter(section=section).annotate(num_book=Count('book')).filter(num_book__gt=0).values().order_by('subsection')       
+            dataset = Genre.objects.filter(section=section).annotate(num_book=Count('book')).filter(num_book__gt=0).values().order_by('subsection', 'pk')
         return dataset
 
     def item_title(self, item):

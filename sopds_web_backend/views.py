@@ -18,6 +18,7 @@ from django.http import HttpResponseBadRequest, HttpResponseForbidden
 
 from opds_catalog import models
 from opds_catalog.annotations import annotation_text, enqueue_visible_ids
+from opds_catalog.book_queries import books_in_series
 from opds_catalog.opdsdb import CAT_INP
 from opds_catalog.prefix_query import prefix_groups
 from opds_catalog.request_params import integer_parameter
@@ -40,8 +41,9 @@ def sopds_login(function=None, redirect_field_name=REDIRECT_FIELD_NAME, url=None
 
 def sopds_processor(request):
     args={}
+    auth_enabled = config.SOPDS_AUTH
     args['app_title']=settings.TITLE
-    args['sopds_auth']=config.SOPDS_AUTH
+    args['sopds_auth']=auth_enabled
     args['sopds_version']=settings.VERSION
     args['alphabet'] = config.SOPDS_ALPHABET_MENU
     args['splititems'] = config.SOPDS_SPLITITEMS
@@ -50,21 +52,21 @@ def sopds_processor(request):
     args['nozip'] = settings.NOZIP_FORMATS
     args['cache_t']=0
 
-    if config.SOPDS_ALPHABET_MENU:
+    if args['alphabet']:
         args['lang_menu'] = lang_menu
     
-    if config.SOPDS_AUTH:
+    if auth_enabled:
         user=request.user
         if user.is_authenticated:
             result=[]
-            for row in bookshelf.objects.filter(user=user).order_by('-readtime')[:8]:
-                book = Book.objects.get(id=row.book_id)
+            for row in bookshelf.objects.filter(user=user).select_related('book').order_by('-readtime', 'pk')[:8]:
+                book = row.book
                 p = {'id':row.id, 'readtime': row.readtime, 'book_id': row.book_id, 'title': book.title, 'authors':book.authors.values()}
                 result.append(p)
             args['bookshelf']=result
         
     books_count = Counter.objects.get_counter(models.counter_allbooks)
-    if books_count and (not config.SOPDS_AUTH or request.user.is_authenticated):
+    if books_count and (not auth_enabled or request.user.is_authenticated):
         random_id = randint(1,books_count)
         random_book = Book.objects.order_by('pk')[random_id-1:random_id].first()
     else:
@@ -108,6 +110,7 @@ def SearchBooksView(request):
     args.update(csrf(request))
 
     if request.GET:
+        auth_enabled = config.SOPDS_AUTH
         searchtype = request.GET.get('searchtype', 'm')
         if searchtype not in ('m', 'b', 'a', 's', 'g', 'u', 'd', 'i'):
             raise BadRequest('Invalid book search type')
@@ -122,13 +125,13 @@ def SearchBooksView(request):
         
         if searchtype == 'm':
             #books = Book.objects.extra(where=["upper(title) like %s"], params=["%%%s%%"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title__contains=searchterms.upper()).order_by('search_title','-docdate')
+            books = Book.objects.filter(search_title__contains=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
             args['breadcrumbs'] = [_('Books'),_('Поиск по названию'),searchterms]
             args['searchobject'] = 'title'
             
         if searchtype == 'b':
             #books = Book.objects.extra(where=["upper(title) like %s"], params=["%s%%"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title__startswith=searchterms.upper()).order_by('search_title','-docdate')
+            books = Book.objects.filter(search_title__startswith=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
             args['breadcrumbs'] = [_('Books'),_('Поиск по названию'),searchterms]   
             args['searchobject'] = 'title'         
             
@@ -141,7 +144,7 @@ def SearchBooksView(request):
             except:
                 author_id = 0
                 aname = ""                  
-            books = Book.objects.filter(authors=author_id).order_by('search_title','-docdate')  
+            books = Book.objects.filter(authors=author_id).distinct().order_by('search_title', '-docdate', 'pk')
             args['breadcrumbs'] = [_('Books'),_('Поиск по автору'),aname]   
             args['searchobject'] = 'author' 
             
@@ -154,7 +157,7 @@ def SearchBooksView(request):
                 ser_id = 0
                 ser = ""
             #books = Book.objects.filter(series=ser_id).order_by('search_title','-docdate')
-            books = Book.objects.filter(series=ser_id).order_by('bseries__ser_no','search_title','-docdate')
+            books = books_in_series(ser_id)
             args['breadcrumbs'] = [_('Books'),_('Поиск по серии'),ser]
             args['searchobject'] = 'series'
             
@@ -169,13 +172,13 @@ def SearchBooksView(request):
                 genre_id = 0
                 args['breadcrumbs'] = [_('Books'),_('Поиск по жанру')]
                 
-            books = Book.objects.filter(genres=genre_id).order_by('search_title','-docdate') 
+            books = Book.objects.filter(genres=genre_id).distinct().order_by('search_title', '-docdate', 'pk')
             args['searchobject'] = 'genre'
                                    
         # Поиск книг на книжной полке            
         elif searchtype == 'u':
-            if config.SOPDS_AUTH:
-                books = Book.objects.filter(bookshelf__user=request.user).order_by('-bookshelf__readtime')
+            if auth_enabled:
+                books = Book.objects.filter(bookshelf__user=request.user).order_by('-bookshelf__readtime', 'pk')
                 args['breadcrumbs'] = [_('Books'),_('Bookshelf'),request.user.username]
                 #books = bookshelf.objects.filter(user=request.user).select_related('book')              
             else:
@@ -189,7 +192,7 @@ def SearchBooksView(request):
             #try:
             book_id = integer_parameter(searchterms, minimum=1, exception=Http404)
             mbook = get_object_or_404(Book, pk=book_id)
-            books = Book.objects.filter(title=mbook.title, authors__in=mbook.authors.all()).exclude(id=book_id).distinct().order_by('-docdate')
+            books = Book.objects.filter(title=mbook.title, authors__in=mbook.authors.all()).exclude(id=book_id).distinct().order_by('-docdate', 'pk')
             args['breadcrumbs'] = [_('Books'),_('Doubles for book'),mbook.title]
             args['searchobject'] = 'title'
             
@@ -235,7 +238,7 @@ def SearchBooksView(request):
                   'annotation_pending': row.cat_type == CAT_INP and row.avail > 0, \
                   'docdate': row.docdate, 'lang': row.lang, 'format': row.format, 'title': row.title, 'filesize': row.filesize,\
                   'authors': authors, 'genres': genres, 'series': series, 'ser_no': ser_no,\
-                  'readtime':row.bookshelf_set.filter(user=request.user).values('readtime') if config.SOPDS_AUTH else None
+                  'readtime':row.bookshelf_set.filter(user=request.user).values('readtime') if auth_enabled else None
                  }
             if summary_DOUBLES_HIDE:
                 title = p['title']
@@ -302,7 +305,7 @@ def SearchSeriesView(request):
 
         #if len(series)>0:
         #    series = series.order_by('ser')   
-        series = series.annotate(count_book=Count('book')).distinct().order_by('search_ser') 
+        series = series.annotate(count_book=Count('book')).distinct().order_by('search_ser', 'pk')
             
         # Создаем результирующее множество
         series_count = series.count()
@@ -342,11 +345,11 @@ def SearchAuthorsView(request):
         page_num = page_num if page_num>0 else 1
         
         if searchtype == 'm':
-            authors = Author.objects.filter(search_full_name__contains=searchterms.upper()).order_by('search_full_name')   
+            authors = Author.objects.filter(search_full_name__contains=searchterms.upper()).order_by('search_full_name', 'pk')
         elif searchtype == 'b':
-            authors = Author.objects.filter(search_full_name__startswith=searchterms.upper()).order_by('search_full_name')    
+            authors = Author.objects.filter(search_full_name__startswith=searchterms.upper()).order_by('search_full_name', 'pk')
         elif searchtype == 'e': 
-            authors = Author.objects.filter(search_full_name=searchterms.upper()).order_by('search_full_name')    
+            authors = Author.objects.filter(search_full_name=searchterms.upper()).order_by('search_full_name', 'pk')
                         
         # Создаем результирующее множество
         authors_count = authors.count()
@@ -374,6 +377,7 @@ def SearchAuthorsView(request):
 @sopds_login(url='web:login')
 def CatalogsView(request):   
     args = {}
+    auth_enabled = config.SOPDS_AUTH
 
     if request.GET:
         cat_id = request.GET.get('cat', None)
@@ -392,10 +396,10 @@ def CatalogsView(request):
     except Catalog.DoesNotExist:
         cat = None
     
-    catalogs_list = Catalog.objects.filter(parent=cat).order_by("cat_name")
+    catalogs_list = Catalog.objects.filter(parent=cat).order_by('cat_name', 'pk')
     catalogs_count = catalogs_list.count()
     # Related authors are rendered for each book in the current page.
-    books_list = Book.objects.filter(catalog=cat).prefetch_related('authors').order_by("search_title")
+    books_list = Book.objects.filter(catalog=cat).prefetch_related('authors').order_by('search_title', 'pk')
     books_count = books_list.count()
     
     # Получаем результирующий список
@@ -412,7 +416,7 @@ def CatalogsView(request):
               'registerdate': row.registerdate, 'id': row.id, 'annotation': annotation_text(row.annotation), \
               'docdate': row.docdate, 'lang': row.lang, 'format': row.format, 'title': row.title, 'filesize': row.filesize, \
               'authors':list(row.authors.all()), 'genres':row.genres.values(), 'series':row.series.values(), 'ser_no':row.bseries_set.values('ser_no'),\
-              'readtime': row.bookshelf_set.filter(user=request.user).values('readtime') if config.SOPDS_AUTH else None
+              'readtime': row.bookshelf_set.filter(user=request.user).values('readtime') if auth_enabled else None
              }
         items.append(p)
                     
@@ -520,7 +524,7 @@ def GenresView(request):
         args['breadcrumbs'] =  [_('Genres'),_('Select')]
     else:
         section = get_object_or_404(Genre, pk=section_id).section
-        items = Genre.objects.filter(section=section).annotate(num_book=Count('book')).filter(num_book__gt=0).values().order_by('subsection')   
+        items = Genre.objects.filter(section=section).annotate(num_book=Count('book')).filter(num_book__gt=0).values().order_by('subsection', 'pk')
         args['breadcrumbs'] =  [_('Genres'),_('Select'),section]   
           
     args['items']=items

@@ -142,6 +142,11 @@ class bookshelf(models.Model):
     book = models.ForeignKey(Book, db_index=True, on_delete=models.CASCADE)
     readtime = models.DateTimeField(null=False, default=timezone.now, db_index=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'book'], name='bookshelf_user_book_uniq'),
+        ]
+
 
 class CounterManager(models.Manager):
     def update(self, counter_name, counter_value):

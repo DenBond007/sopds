@@ -8,6 +8,31 @@
 Для M06 пользователь выбрал новую установку: проверяется backup/restore
 только dev-БД, перенос и сравнение с прежней рабочей БД неприменимы.
 
+## Миграция 0006: уникальность полок
+
+Перед обновлением на 0006 сначала восстановите снимок в отдельную БД и
+проверьте число повторяющихся пар пользователь–книга:
+
+```sql
+SELECT count(*) AS duplicate_pairs
+FROM (
+    SELECT user_id, book_id FROM opds_catalog_bookshelf
+    GROUP BY user_id, book_id HAVING count(*) > 1
+) AS duplicates;
+```
+
+Миграция повторяет проверку и при наличии дублей останавливается без
+изменения записей. Не удаляйте дубли автоматически: сначала согласуйте,
+какие ID и время чтения нужно сохранить. При отсутствии дублей добавляется
+ограничение БД на `(user, book)`; существующие ID и readtime сохраняются.
+Откат на 0005 снимает ограничение, не удаляя строки, но снова допускает
+конкурентное создание дублей. Применение к постоянной установке выполняется
+оператором после проверки копии и резервирования данных.
+
+M06.9 проверила прямую/обратную миграцию на восстановленном искусственном
+снимке M06.2, а также отказ при специально созданных дублях в тестовой БД.
+Dev-БД и временный HTTPS probe в этой задаче не мигрировались.
+
 ## Проверки перед снимком
 
 Нужен клиент `pg_dump`/`pg_restore` версии **17 или новее** для сервера
@@ -69,6 +94,7 @@ PGPASSWORD="$DB_PASS" "$PG_BIN/pg_restore" \
   --exit-on-error --no-owner --no-privileges "$BACKUP_BASE.dump"
 mkdir -p .local/restore-probe
 tar -C .local/restore-probe -xpf "$BACKUP_BASE.library.tar"
+DB_NAME="$RESTORE_DB" .venv/bin/python manage.py migrate --noinput
 DB_NAME="$RESTORE_DB" .venv/bin/python manage.py migrate --check
 DB_NAME="$RESTORE_DB" .venv/bin/python manage.py sopds_util setconf \
   SOPDS_ROOT_LIB "$PWD/.local/restore-probe/library"

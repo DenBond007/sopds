@@ -6,7 +6,7 @@ from django.test import TransactionTestCase
 
 class ScanMetadataMigrationTests(TransactionTestCase):
     old = ('opds_catalog', '0001_initial')
-    new = ('opds_catalog', '0005_annotation_task')
+    new = ('opds_catalog', '0006_bookshelf_user_book_unique')
 
     def test_existing_book_and_shelf_keep_ids(self):
         executor = MigrationExecutor(connection)
@@ -59,7 +59,10 @@ class ScanMetadataMigrationTests(TransactionTestCase):
         self.assertIsNone(migrated.last_seen_scan_id)
         self.assertEqual(migrated.annotation, 'Legacy description')
         self.assertIsNone(NewCatalog.objects.get(pk=catalog.pk).source_mtime_ns)
-        self.assertEqual(NewShelf.objects.get(pk=shelf_id).book_id, book_id)
+        migrated_shelf = NewShelf.objects.get(pk=shelf_id)
+        self.assertEqual((migrated_shelf.book_id, migrated_shelf.user_id,
+                          migrated_shelf.readtime), (book_id, user.pk, shelf.readtime))
+        self.assertTrue(get_user_model().objects.get(pk=user.pk).check_password('test-password'))
         self.assertEqual(NewBookAuthor.objects.get(pk=author_link.pk).author_id, author.pk)
         self.assertEqual(NewBookAuthor.objects.get(pk=author_link.pk).book_id, book_id)
         self.assertEqual(NewBookGenre.objects.get(pk=genre_link.pk).genre_id, genre.pk)
@@ -73,3 +76,37 @@ class ScanMetadataMigrationTests(TransactionTestCase):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 AnnotationTask.objects.create(book_id=book_id)
+
+
+class BookshelfUniquenessMigrationTests(TransactionTestCase):
+    old = ('opds_catalog', '0005_annotation_task')
+    new = ('opds_catalog', '0006_bookshelf_user_book_unique')
+
+    def test_duplicate_preflight_preserves_every_shelf_and_rolls_back_migration(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate([self.old])
+        apps = executor.loader.project_state([self.old]).apps
+        Catalog = apps.get_model('opds_catalog', 'Catalog')
+        Book = apps.get_model('opds_catalog', 'Book')
+        Shelf = apps.get_model('opds_catalog', 'bookshelf')
+        user = get_user_model().objects.create_user('duplicate_migration_probe')
+        catalog = Catalog.objects.create(cat_name='.', path='.')
+        book = Book.objects.create(
+            filename='probe.fb2', path='.', catalog=catalog, format='fb2',
+            title='Probe', search_title='PROBE', annotation='Saved annotation',
+        )
+        Shelf.objects.create(user_id=user.pk, book_id=book.pk)
+        injected_duplicate = Shelf.objects.create(user_id=user.pk, book_id=book.pk)
+        before = list(Shelf.objects.order_by('pk').values())
+        try:
+            with self.assertRaisesRegex(RuntimeError, 'Duplicate bookshelf entries'):
+                MigrationExecutor(connection).migrate([self.new])
+            self.assertEqual(list(Shelf.objects.order_by('pk').values()), before)
+            self.assertEqual(Book.objects.get(pk=book.pk).annotation, 'Saved annotation')
+            self.assertNotIn(self.new, MigrationExecutor(connection).loader.applied_migrations)
+        finally:
+            # Remove only the duplicate deliberately injected by this test,
+            # then restore the current schema for the rest of the test suite.
+            injected_duplicate.delete()
+            MigrationExecutor(connection).migrate([self.new])
+        self.assertEqual(list(Shelf.objects.values()), before[:1])

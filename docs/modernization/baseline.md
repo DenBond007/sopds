@@ -1,5 +1,13 @@
 # M00: исходное состояние SOPDS (23.09.2026)
 
+Актуализация M06.9 (25.09.2026): после проверки `.local/dev.env` на локальное
+dev-назначение и отсутствия `test_sopds_m06_integrity_20260925` выполнена
+`DB_NAME=sopds_m06_integrity_20260925 .venv/bin/python manage.py test --noinput`:
+171/171, exit 0, test-БД удалена. `manage.py check` и
+`manage.py makemigrations --check --dry-run` — exit 0. Применение/откат 0006
+проверены только на восстановленном искусственном снимке в новой одноразовой
+БД. Команды, первоначальные сбои и ограничения — в [m06-integrity.md](m06-integrity.md).
+
 Обновление по решению пользователя: legacy-запуск и исходные тесты не выполняются;
 результат тестов до модернизации неизвестен. M00B продолжает работу сразу на
 Python 3.13 / Django 5.2. В записи ниже Django 2.2 означает только версию из
@@ -660,3 +668,23 @@ M05.4: общий локальный эквивалент CI дал 131/131 те
 Secure-флаги cookies) для ещё не определённой HTTPS-схемы; критических
 ошибок проверки нет. Итоговые подтверждения и внешние условия записаны в
 [candidate.md](candidate.md). Лог: `.local/logs/m05-deploy-check.log`.
+
+## M06.11 — SQL полки и настроек (2026-09-25)
+
+Локальный runner `.local/run-m06-integrity-tests.sh` загружает dev-окружение
+без вывода секретов, проверяет тестовый адрес/роль, PostgreSQL 17 и отсутствие
+`test_sopds_m06_integrity_20260925`. Далее запускает
+`DB_NAME=sopds_m06_integrity_20260925 .venv/bin/python manage.py test --noinput`
+с `DJANGO_SETTINGS_MODULE=sopds.settings`; Django создаёт и удаляет новую
+test-БД. До исправления новые тесты выявили шесть падений по числу SQL.
+После исправления адресные `test_web_settings_queries`, `test_web_queries`,
+`test_http_security`, `test_stable_ordering` — 33/33; общий набор — 174/174
+за 36,630 с, exit 0. Test-БД удалены.
+
+`.venv/bin/python manage.py check` и
+`.venv/bin/python manage.py makemigrations --check --dry-run` с проверенным
+dev-окружением завершились с exit 0: замечаний и новых миграций нет.
+Dev-БД и HTTPS probe не мигрировались, службы не перезапускались.
+Логи: `.local/logs/m06-web-sql-before.log`, `m06-web-sql-targeted.log`,
+`m06-web-sql-full.log`, `m06-web-sql-check.log`, `m06-web-sql-migrations.log`.
+[Замеры SQL и пределы проверки](m06-web-sql.md).
