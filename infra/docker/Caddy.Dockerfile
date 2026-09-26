@@ -5,4 +5,5 @@ RUN setcap -r /usr/bin/caddy \
     && chown -R 10001:10001 /data /config /srv/static \
     && chmod 0700 /data /config /data/caddy /config/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
+COPY caddy-healthcheck.sh /usr/local/bin/sopds-caddy-healthcheck
 USER 10001:10001

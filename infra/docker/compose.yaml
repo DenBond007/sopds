@@ -130,7 +130,7 @@ services:
       SOPDS_PRIVATE_HOST: ${SOPDS_PRIVATE_HOST:?Set the LAN IPv4 address}
     ports:
       - target: 8443
-        published: "${SOPDS_HTTPS_PORT:-9443}"
+        published: "${SOPDS_HTTPS_PORT:-9444}"
         host_ip: ${SOPDS_PRIVATE_HOST:?Set the LAN IPv4 address}
         protocol: tcp
     volumes:
@@ -141,6 +141,12 @@ services:
     depends_on:
       web:
         condition: service_healthy
+    healthcheck:
+      test: [CMD, /bin/sh, /usr/local/bin/sopds-caddy-healthcheck]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     stop_grace_period: 345s
     logging: *logging
 

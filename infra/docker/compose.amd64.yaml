@@ -1,0 +1,8 @@
+# Optional: use the exact linux/amd64 member of the multiarch image in compose.yaml.
+# Preload it with `docker pull --platform linux/amd64 <image below>`.
+# This avoids a repeated multiarch lookup when Docker Hub requests time out.
+services:
+  db:
+    image: postgres:17.11-bookworm@sha256:91eb910c44c7ed13f7f1a4ccadaa9ca72ef14cddc04cacb6e070e48eb44731a3
+    platform: linux/amd64
+    pull_policy: never

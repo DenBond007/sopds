@@ -739,3 +739,45 @@ M07.1 завершает подготовку. M07.2 остаётся забло
 PostgreSQL init, TLS/OPDS/download/worker и сохранность при restart ещё не доказаны.
 Общий последний локальный набор 182/182 относится к M06; в M07 выполнены адресные
 22 теста. Правила Docker socket/root не обходились; текущий стенд читалки работает.
+
+
+## M07.2 — сборка и контейнерный smoke, 2026-09-27
+
+Пользователь явно поручил сборку/контейнерную проверку. Разрешён локальный Docker
+context default (`unix:///var/run/docker.sock`), без sudo/root на хосте. До запуска
+не было контейнеров/томов/сетей sopds-container. Порт 9443 принадлежал Portainer;
+выбран свободный 9444. Текущие нативные службы/БД/библиотека не изменялись.
+
+`DC` ниже обозначает `docker compose --env-file .local/container.env
+-f infra/docker/compose.yaml -f infra/docker/compose.amd64.yaml`; секреты в вывод
+не попадали. Во время прогона использовалась локальная копия того же override;
+равенство resolved config подтверждено. Образы: sopds-app:local / sopds-caddy:local.
+
+| Команда / проверка | Результат |
+|---|---|
+| `docker compose --env-file .local/container.env -f infra/docker/compose.yaml build web caddy` | Exit 0, locked 18 пакетов; runtime Python 3.13.15, Django 5.2.17; Caddy 2.11.4. Контекст app 6.99 МБ. |
+| Два `up -d --wait db` через multiarch digest | Timeout Docker Hub. После проверки public index/amd64 manifests явный `docker pull --platform linux/amd64 postgres:17.11-bookworm@sha256:91eb910c44c7ed13f7f1a4ccadaa9ca72ef14cddc04cacb6e070e48eb44731a3` — exit 0. Последующий multiarch up снова завис; остановлены только его два клиента. |
+| `DC up -d --wait db` с точным amd64 digest | Exit 0; `17.11 (Debian 17.11-1.pgdg12+2)`, свежий pgdata. Версия/слои БД не подменялись; digest является amd64-членом committed index. |
+| `python3 .local/m07-container-setup.py` | check, migrate, genres, явные /library и /tmp/sopds, scanner log /tmp, collectstatic и scan — exit 0. 3 искусственные книги/1 полка; role sopds без SUPERUSER/CREATEDB/CREATEROLE. Запись в /library и /app запрещена. |
+| `docker run --rm --network none --read-only --cap-drop ALL ...` для образов | UID10001, импорты зависимостей работают; `.local`/`.git`/env/книги/тесты/старые converter binaries отсутствуют, шесть миграций присутствуют; Caddy запускается без capabilities. |
+| TLS до исправления: `openssl s_client` с CA и verify_ip | Без SNI exit 1 (internal error); с `-servername 192.168.88.44` exit 0. Установлен default_sni, добавлен Caddy TLS healthcheck, образ пересобран. |
+| `python3 .local/m07-http-smoke.py` после исправления | TLS/CA/IP без обхода, 401/200, OPDS/search, SHA256 direct/ZIP downloads, FB2-preview/CSP, отдельный INPX worker, медленный >8 МиБ download с параллельным каталогом, CSRF 403/успешный вход/admin/static — всё прошло. |
+| `python3 .local/m07-container-tests.py` | Внутри app image: 182/182 за 118.011 с, exit 0. Отдельная роль/база sopds_m07_testbase_20260927; test-данные read-only, исполняемый tmpfs только у runner для converter fixtures. Test-БД/base/роль удалены. Runtime app-роль не повышалась. |
+| `python3 .local/m07-integrity.py` | Повторный scan сохранил ID/полки/readtime; контролируемый active scan дождался освобождения после Docker SIGTERM и завершился exit 0. Probe-контейнер удалён. |
+| Тот же integrity: `DC restart`, затем `up --wait` | Хеши строк всех таблиц и CA совпали до/после перезапуска всех пяти сервисов; повторный migrate не меняет данные. |
+| `pg_dump -Fc`, `pg_restore --exit-on-error` в sopds_m07_restore_20260927 | Все таблицы совпали по количеству/хешам строк. Restore-БД удалена. Backup сохранён в `.local/backups/m07-container-20260927/` (0700, файлы 0600). Архив библиотеки и сама библиотека совпали с исходными SHA256. |
+| `python3 .local/m07-long-preview.py` | Временные read-only test mounts добавляли 32-секундную задержку встроенному FB2-preview. SIGTERM web и отдельно Caddy сохранил HTTPS-ответ после 33.2 с каждый; параллельный каталог работал. Исходный image восстановлен, mounts сняты. |
+| `python3 .local/m07-final-audit.py` | Пять процессов non-root, cap_drop ALL/no-new-privileges, read-only app/library, только LAN9444 опубликован, 0 аварийных restart. db/web/caddy healthy. Исходный preview снова быстрый, test/restore-БД и test-роль отсутствуют. |
+| `DC run --rm -T manage check --deploy` | Только ожидаемый security.W004; HSTS ждёт физической читалки. |
+
+Логи: `.local/logs/m07-build.log`, `m07-db-start*.log`,
+`m07-postgres-pull-platform.log`, `m07-container-setup.log`, `m07-container-tests.log`,
+`m07-tls-*.log`, `m07-caddy-*.log`, `m07-http-smoke-fixed.log`, `m07-integrity.log`,
+`m07-long-preview.log`, `m07-final-audit.log`, `m07-deploy-check.log`.
+Первый HTTP-smoke намеренно зафиксировал TLS-дефект; проверки не ослаблялись.
+Физическая читалка, reboot и arm64 остаются непроверенными. Контур завершается
+`DC stop` с сохранением образов/томов; постоянный deployment и push не выполняются.
+
+Итог M07.2: `DC stop` — все пять контейнеров exited/0 (сводка `.local/m07/final-status.json`).
+Native user services active, HTTPS 8443 с доверенным CA — 401 без входа.
+Portainer продолжает работать на 9443. `git diff --check` — exit 0.

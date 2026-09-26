@@ -1,6 +1,8 @@
 {
 	auto_https disable_redirects
 	https_port 8443
+	# IP clients omit SNI; the container socket address differs from the LAN IP.
+	default_sni {$SOPDS_PRIVATE_HOST}
 	grace_period 330s
 	admin off
 	skip_install_trust
