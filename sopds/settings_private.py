@@ -47,7 +47,8 @@ ALLOWED_HOSTS = [PRIVATE_HOST]
 CSRF_TRUSTED_ORIGINS = [f"https://{PRIVATE_HOST}"]
 STATIC_ROOT = str(static_root)
 
-# The proxy must be the only process able to reach the loopback WSGI listener.
+# Only trusted services may reach WSGI: loopback natively, a private Docker network
+# in Compose. Never publish the container WSGI port on the host.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True

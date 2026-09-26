@@ -1,0 +1,20 @@
+{
+	auto_https disable_redirects
+	https_port 8443
+	grace_period 330s
+	admin off
+	skip_install_trust
+}
+
+https://{$SOPDS_PRIVATE_HOST} {
+	tls internal
+
+	handle_path /static/* {
+		root * /srv/static
+		file_server
+	}
+
+	handle {
+		reverse_proxy web:8000
+	}
+}

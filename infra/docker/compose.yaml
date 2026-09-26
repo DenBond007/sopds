@@ -1,0 +1,156 @@
+name: sopds-container
+
+x-app: &app
+  image: sopds-app:local
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+  user: "10001:10001"
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=512m,mode=1777
+  environment:
+    DJANGO_SETTINGS_MODULE: sopds.settings_private
+    SOPDS_SECRET_KEY: ${SOPDS_SECRET_KEY:?Set SOPDS_SECRET_KEY in a private env file}
+    SOPDS_PRIVATE_HOST: ${SOPDS_PRIVATE_HOST:?Set the LAN IPv4 address}
+    SOPDS_STATIC_ROOT: /srv/static
+    TIME_ZONE: ${TIME_ZONE:-UTC}
+    DB_NAME: sopds
+    DB_USER: sopds
+    DB_PASS: ${SOPDS_DB_PASSWORD:?Set a separate application DB password}
+    DB_HOST: db
+    DB_PORT: "5432"
+  volumes:
+    - type: bind
+      source: ${SOPDS_LIBRARY:?Set an absolute path to the separate test library}
+      target: /library
+      read_only: true
+      bind:
+        create_host_path: false
+  networks: [backend]
+  depends_on:
+    db:
+      condition: service_healthy
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    image: postgres:17.11-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652
+    user: postgres
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      POSTGRES_DB: sopds
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a separate PostgreSQL admin password}
+      SOPDS_DB_PASSWORD: ${SOPDS_DB_PASSWORD:?Set a separate application DB password}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - type: bind
+        source: ./init-db.sh
+        target: /docker-entrypoint-initdb.d/10-sopds.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [backend]
+    healthcheck:
+      test: [CMD, pg_isready, -h, "127.0.0.1", -U, postgres, -d, sopds]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 60s
+    logging: *logging
+
+  web:
+    <<: *app
+    restart: unless-stopped
+    # CLI bind overrides the native loopback setting only inside this container.
+    command: [gunicorn, --config, infra/gunicorn.conf.py, --bind, "0.0.0.0:8000", "sopds.wsgi:application"]
+    healthcheck:
+      test: [CMD, python, infra/docker/healthcheck.py]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 345s
+
+  scanner:
+    <<: *app
+    command: [python, manage.py, sopds_scanner, run]
+    restart: unless-stopped
+    # Increase after measuring a full scan; SIGTERM waits for the active scan.
+    stop_grace_period: 300s
+
+  annotations:
+    <<: *app
+    command: [python, manage.py, sopds_annotation_worker]
+    restart: unless-stopped
+    stop_grace_period: 60s
+
+  manage:
+    <<: *app
+    profiles: [tools]
+    entrypoint: [/bin/sh, /app/infra/docker/entrypoint.sh, python, manage.py]
+    command: [check]
+    restart: "no"
+    # YAML merge replaces lists: repeat the library bind before adding static.
+    volumes:
+      - type: bind
+        source: ${SOPDS_LIBRARY:?Set an absolute path to the separate test library}
+        target: /library
+        read_only: true
+        bind:
+          create_host_path: false
+      - static:/srv/static
+
+  caddy:
+    image: sopds-caddy:local
+    build:
+      context: .
+      dockerfile: Caddy.Dockerfile
+    user: "10001:10001"
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777
+    environment:
+      SOPDS_PRIVATE_HOST: ${SOPDS_PRIVATE_HOST:?Set the LAN IPv4 address}
+    ports:
+      - target: 8443
+        published: "${SOPDS_HTTPS_PORT:-9443}"
+        host_ip: ${SOPDS_PRIVATE_HOST:?Set the LAN IPv4 address}
+        protocol: tcp
+    volumes:
+      - static:/srv/static:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [ingress, backend]
+    depends_on:
+      web:
+        condition: service_healthy
+    stop_grace_period: 345s
+    logging: *logging
+
+networks:
+  ingress:
+  backend:
+    internal: true
+
+volumes:
+  pgdata:
+  static:
+  caddy_data:
+  caddy_config:

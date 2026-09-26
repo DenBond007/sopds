@@ -706,3 +706,36 @@ Dev-БД и HTTPS probe не мигрировались, службы не пе�
 прошли (единственный ожидаемый W004). Команды, ограничения и логи —
 в [m06-runtime.md](m06-runtime.md). Обычные команды были недоступны из-за
 bubblewrap; пользователь разрешил штатную эскалацию, использован этот путь.
+
+
+## M07.1 — подготовка Dockerfile/Compose, 2026-09-26
+
+Цель размещения изменена пользователем на Docker. Подготовлены root Dockerfile,
+`.dockerignore`, `infra/docker/compose.yaml`, Caddy image/config, entrypoint,
+HTTP healthcheck, init роли БД и пример env. Команды первого запуска и критерии
+M07.2 — [docker.md](docker.md). Существующий dev-db Compose и HTTPS-стенд не изменены.
+
+| Проверка | Результат |
+|---|---|
+| Публичные registry manifests Python 3.13.15, uv 0.12.18, PostgreSQL 17.11, Caddy 2.11.4 | Digest закреплены; общие linux/amd64 и linux/arm64. Образы не скачивались и не запускались. |
+| `docker compose -f infra/docker/compose.yaml --profile tools config --format json` с искусственным env | Exit 0: шесть сервисов, non-root/cap_drop, единственный LAN HTTPS-порт 9443, backend internal, четыре отдельных тома, библиотека read-only и create_host_path=false. Проверены итоговые stop_grace_period. Docker daemon не используется. |
+| `config --quiet` без одного из пяти обязательных параметров | Все пять случаев отвергнуты; реальные секреты не использованы/не выводились. |
+| `SOPDS_PRIVATE_HOST=192.168.88.44 .local/caddy-probe/bin/caddy adapt --config infra/docker/Caddyfile --adapter caddyfile` | Exit 0: HTTPS :8443, admin off, skip_install_trust, grace_period 330 с. Никакой сервер не запущен. |
+| `sh -n infra/docker/entrypoint.sh infra/docker/init-db.sh` | Exit 0. Init SQL пока не выполнялся в контейнере. |
+| Нативный subprocess entrypoint | Exit-код дочернего процесса 23 сохранён, файл 0600, PID после exec совпал, SIGTERM обработан дочерним процессом с exit 0. |
+| `.venv/bin/python .local/m07-package-check.py` | Выбранные исходники в отдельном временном каталоге: `manage.py check`, `collectstatic --noinput` (461 файл), `gunicorn --check-config --config infra/gunicorn.conf.py --bind 0.0.0.0:8000 sopds.wsgi:application` — exit 0. Использован нативный venv, не Docker image. |
+| `SOPDS_PRIVATE_HOST=192.168.88.44 .venv/bin/python infra/docker/healthcheck.py` | Exit 0 на действующем native Gunicorn, без пароля. |
+| `bash .local/run-m06-integrity-tests.sh .local/logs/m07-targeted-tests.log opds_catalog.tests.test_private_settings opds_catalog.tests.test_gunicorn_requests opds_catalog.tests.test_scanner_lifecycle opds_catalog.tests.test_annotation_worker opds_catalog.tests.test_conversion_process` | 22/22, 47.183 с, exit 0. Одноразовая test-БД удалена; сохранность scanner/полок входит в адресные тесты. |
+| Native probe: `systemctl --user is-active` и curl с его CA к `https://192.168.88.44:8443/opds/` | Обе службы active; TLS проходит без обхода проверки, без входа ожидаемый 401. |
+| `git diff --check` | Exit 0. |
+
+Логи: `.local/logs/m07-config-check.log`, `m07-caddy-adapt.json`,
+`m07-package-check.log`, `m07-targeted-tests.log`. В промежуточной проверке JSON
+ошибочно ожидался `grace_period` внутри server; `caddy adapt` помещает его в
+`apps.http`. Исправлен только проверочный скрипт; итоговая проверка прошла.
+
+M07.1 завершает подготовку. M07.2 остаётся заблокирован до операторского build
+и smoke: реальная сборка, доступность wheels внутри image, права томов/библиотеки,
+PostgreSQL init, TLS/OPDS/download/worker и сохранность при restart ещё не доказаны.
+Общий последний локальный набор 182/182 относится к M06; в M07 выполнены адресные
+22 теста. Правила Docker socket/root не обходились; текущий стенд читалки работает.
