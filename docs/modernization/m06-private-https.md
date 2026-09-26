@@ -31,8 +31,16 @@ Docker нужен только для тестовой БД. Собственн�
 DJANGO_SETTINGS_MODULE=sopds.settings_private \
   .venv/bin/python manage.py collectstatic --noinput
 DJANGO_SETTINGS_MODULE=sopds.settings_private \
-  .venv/bin/gunicorn --bind 127.0.0.1:8000 sopds.wsgi:application
+  .venv/bin/gunicorn --config infra/gunicorn.conf.py sopds.wsgi:application
 ```
+
+`infra/gunicorn.conf.py` явно задаёт два sync-worker, один запрос на процесс,
+тайм-аут и время штатной остановки 330 секунд при пределе конвертера 300 секунд.
+Один долгий запрос оставляет второй процесс для каталога. Одновременное
+заполнение обоих процессов по-прежнему ограничивает пропускную способность;
+число процессов увеличивать по замерам памяти и нагрузки. Для остановки
+использовать SIGTERM/systemd, не SIGKILL; при аварийном SIGKILL выполнение
+Python-finally и удаление временных файлов не гарантируются.
 
 Сканер и worker аннотаций запускаются отдельно нативно. До запуска сканера
 оператор явно проверяет, что `SOPDS_ROOT_LIB` указывает на предназначенную

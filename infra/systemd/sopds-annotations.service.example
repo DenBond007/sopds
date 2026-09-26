@@ -1,0 +1,19 @@
+[Unit]
+Description=SOPDS annotation worker
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/sopds
+EnvironmentFile=%h/.config/sopds/service.env
+ExecStart=%h/Projects/sopds/.venv/bin/python manage.py sopds_annotation_worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

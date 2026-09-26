@@ -688,3 +688,21 @@ Dev-БД и HTTPS probe не мигрировались, службы не пе�
 Логи: `.local/logs/m06-web-sql-before.log`, `m06-web-sql-targeted.log`,
 `m06-web-sql-full.log`, `m06-web-sql-check.log`, `m06-web-sql-migrations.log`.
 [Замеры SQL и пределы проверки](m06-web-sql.md).
+
+## M06.13–M06.15: нативный запуск (2026-09-26)
+
+Адресный Gunicorn/converter набор через `.local/run-m06-integrity-tests.sh`:
+16/16; общий — 179/179. Scanner lifecycle/scan safety/annotation worker:
+33/33. Чистый локальный эквивалент CI через `.local/m06-ci-verify.py` с
+новой `sopds_m06_ci_20260926` и TIME_ZONE=UTC: `uv sync --frozen --offline`,
+`manage.py check`, `makemigrations --check --dry-run`,
+`manage.py test --noinput` — exit 0, 182/182 за 87.662 с. Все созданные CI/test
+БД удалены. Исправлен подтверждённый KeyError TIME_ZONE в remote workflow.
+
+`gunicorn --check-config --config infra/gunicorn.conf.py sopds.wsgi:application`
+и `systemd-analyze --user verify` трёх шаблонов прошли. Probe обновлён до
+0006 после проверенного восстановления снимка на новой копии; сохранность
+строк подтверждена до HTTP smoke. Новый HTTPS smoke и private check
+прошли (единственный ожидаемый W004). Команды, ограничения и логи —
+в [m06-runtime.md](m06-runtime.md). Обычные команды были недоступны из-за
+bubblewrap; пользователь разрешил штатную эскалацию, использован этот путь.

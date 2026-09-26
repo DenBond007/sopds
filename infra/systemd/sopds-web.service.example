@@ -1,0 +1,20 @@
+[Unit]
+Description=SOPDS Gunicorn web server
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/sopds
+EnvironmentFile=%h/.config/sopds/service.env
+Environment=DJANGO_SETTINGS_MODULE=sopds.settings_private
+ExecStart=%h/Projects/sopds/.venv/bin/gunicorn --config infra/gunicorn.conf.py sopds.wsgi:application
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=345
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

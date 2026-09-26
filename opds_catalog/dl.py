@@ -6,7 +6,6 @@ import base64
 import io
 import subprocess
 import tempfile
-import signal
 import sys
 import zipfile as standard_zipfile
 from contextlib import closing
@@ -29,7 +28,9 @@ from PIL import Image
 
 from opds_catalog.middleware import BasicAuthMiddleware
 
-CONVERTER_TIMEOUT_SECONDS = 300
+from opds_catalog.conversion_process import (
+    CONVERTER_TIMEOUT_SECONDS, wait_for_converter,
+)
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
 MAX_COVER_SOURCE_BYTES = 32 * 1024 * 1024
 HTML_HEAD_STYLE = b'''
@@ -205,13 +206,8 @@ def getFileDataConv(book, convert_type):
             start_new_session=True,
         )
         try:
-            proc.communicate(timeout=CONVERTER_TIMEOUT_SECONDS)
+            wait_for_converter(proc, CONVERTER_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            proc.communicate()
             return None
         if proc.returncode != 0:
             return None
@@ -331,13 +327,8 @@ def ViewHtml(request, book_id):
             start_new_session=True,
         )
         try:
-            proc.communicate(timeout=CONVERTER_TIMEOUT_SECONDS)
+            wait_for_converter(proc, CONVERTER_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired as error:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            proc.communicate()
             raise Http404 from error
         if proc.returncode != 0 or not html_path.is_file():
             raise Http404

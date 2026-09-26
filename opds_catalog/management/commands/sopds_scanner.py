@@ -2,11 +2,13 @@ import os
 import signal
 import sys
 import logging
+from contextlib import nullcontext
+from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import connection
 from django.conf import settings as main_settings
 
@@ -15,6 +17,7 @@ from opds_catalog.sopdscan import opdsScanner
 #from opds_catalog.settings import SCANNER_LOG, SCAN_SHED_DAY, SCAN_SHED_DOW, SCAN_SHED_HOUR, SCAN_SHED_MIN, LOGLEVEL, SCANNER_PID
 from opds_catalog import settings 
 from constance import config
+from opds_catalog.scanner_process import scanner_pidfile, stop_scanner
 
 SCAN_LOCK_KEYS = (0x534F5044, 0x5343414E)  # "SOPD", "SCAN"
 
@@ -23,25 +26,27 @@ class Command(BaseCommand):
     scan_is_active = False
 
     def add_arguments(self, parser):
-        parser.add_argument('command', help='Use [ scan | start | stop | restart ]')
+        parser.add_argument('command', choices=['scan', 'run', 'start', 'stop', 'restart'])
         parser.add_argument('--verbose',action='store_true', dest='verbose', default=False, help='Set verbosity level for books collection scan.')
         parser.add_argument('--daemon',action='store_true', dest='daemonize', default=False, help='Daemonize server')
         
     def handle(self, *args, **options): 
         self.pidfile = os.path.join(main_settings.BASE_DIR, config.SOPDS_SCANNER_PID)
-        action = options['command']            
+        action = options['command']
+        if action == 'run' and options['daemonize']:
+            raise CommandError('run stays in the foreground; do not use --daemon')
         self.logger = logging.getLogger('')
         self.logger.setLevel(logging.DEBUG)
         formatter=logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
 
-        if settings.LOGLEVEL!=logging.NOTSET:
+        if action != 'run' and settings.LOGLEVEL!=logging.NOTSET:
             # Создаем обработчик для записи логов в файл
             fh = logging.FileHandler(config.SOPDS_SCANNER_LOG)
             fh.setLevel(settings.LOGLEVEL)
             fh.setFormatter(formatter)
             self.logger.addHandler(fh)
 
-        if options['verbose']:
+        if options['verbose'] or action == 'run':
             # Создадим обработчик для вывода логов на экран с максимальным уровнем вывода
             ch = logging.StreamHandler()
             ch.setLevel(logging.DEBUG)
@@ -58,13 +63,15 @@ class Command(BaseCommand):
             self.stdout.write('Startup once book-scan.')
             self.scan()   
             self.stdout.write('Complete book-scan.')        
+        elif action == 'run':
+            self.start(supervised=True)
         elif action == "start":
             self.start()
         elif action == "stop":
-            pid = open(self.pidfile, "r").read()
+            pid = Path(self.pidfile).read_text()
             self.stop(pid)
         elif action == "restart":
-            pid = open(self.pidfile, "r").read()
+            pid = Path(self.pidfile).read_text()
             self.restart(pid)            
 
     def scan(self):
@@ -104,6 +111,8 @@ class Command(BaseCommand):
         self.sched.reschedule_job('scan', trigger='cron', day=self.SCAN_SHED_DAY, day_of_week=self.SCAN_SHED_DOW, hour=self.SCAN_SHED_HOUR, minute=self.SCAN_SHED_MIN)
     
     def check_settings(self):
+        if getattr(self, '_stopping', False):
+            return
         if connection.connection and not connection.is_usable():
             connection.close()
         settings.constance_update_all()
@@ -117,41 +126,54 @@ class Command(BaseCommand):
             self.stdout.write('Startup scannyng directly by SOPDS_SCAN_START_DIRECTLY flag.')
             self.sched.add_job(self.scan, id='scan_directly')
                        
-    def start(self):
-        writepid(self.pidfile)
+    def start(self, *, supervised=False):
         self.SCAN_SHED_DAY = config.SOPDS_SCAN_SHED_DAY
         self.SCAN_SHED_DOW = config.SOPDS_SCAN_SHED_DOW
         self.SCAN_SHED_HOUR = config.SOPDS_SCAN_SHED_HOUR
         self.SCAN_SHED_MIN = config.SOPDS_SCAN_SHED_MIN
-        self.stdout.write('Startup scheduled book-scan (min=%s, hour=%s, day_of_week=%s, day=%s).'%(self.SCAN_SHED_MIN,self.SCAN_SHED_HOUR,self.SCAN_SHED_DOW,self.SCAN_SHED_DAY))
         self.sched = BlockingScheduler()
-        self.sched.add_job(self.scan, 'cron', day=self.SCAN_SHED_DAY, day_of_week=self.SCAN_SHED_DOW, hour=self.SCAN_SHED_HOUR, minute=self.SCAN_SHED_MIN, id='scan')
+        self.sched.add_job(
+            self.scan, 'cron', day=self.SCAN_SHED_DAY,
+            day_of_week=self.SCAN_SHED_DOW, hour=self.SCAN_SHED_HOUR,
+            minute=self.SCAN_SHED_MIN, id='scan',
+        )
         self.sched.add_job(self.check_settings, 'cron', minute='*/10', id='check')
-        quit_command = 'CTRL-BREAK' if sys.platform == 'win32' else 'CONTROL-C'
-        self.stdout.write("Quit the server with %s.\n"%quit_command)  
-        try:
-            self.sched.start()
-        except (KeyboardInterrupt, SystemExit):
-            pass            
-    
-    def stop(self, pid):
-        try:
-            os.kill(int(pid), signal.SIGTERM)
-        except OSError as e:
-            self.stdout.write("Error stopping sopds_scanner: %s"%str(e))
-    
-    def restart(self, pid):
-        self.stop(pid)
+        self._stopping = False
+
+        class StopScheduler(BaseException):
+            pass
+
+        def request_stop(signum, frame):
+            if not self._stopping:
+                self._stopping = True
+                raise StopScheduler()
+
+        previous = {}
+        ownership = nullcontext() if supervised else scanner_pidfile(self.pidfile)
+        with ownership:
+            try:
+                for signum in (signal.SIGTERM, signal.SIGINT):
+                    previous[signum] = signal.signal(signum, request_stop)
+                self.stdout.write('Scanner ready; SIGTERM/SIGINT finish the active scan.')
+                self.sched.start()
+            except (StopScheduler, KeyboardInterrupt):
+                pass
+            finally:
+                try:
+                    if self.sched.running:
+                        self.sched.shutdown(wait=True)
+                finally:
+                    for signum, handler in previous.items():
+                        signal.signal(signum, handler)
+
+    def stop(self, record):
+        stop_scanner(record)
+
+    def restart(self, record):
+        self.stop(record)
         self.start()
 
-def writepid(pid_file):
-    """
-    Write the process ID to disk.
-    """
-    fp = open(pid_file, "w")
-    fp.write(str(os.getpid()))
-    fp.close()
-    
+
 def daemonize():
     """
     Detach from the terminal and continue as a daemon.
@@ -163,7 +185,7 @@ def daemonize():
     os.setsid()
     if os.fork():   # launch child and...
         os._exit(0) # kill off parent again.
-    os.umask(0)
+    os.umask(0o077)
 
     std_in = open("/dev/null", 'r')
     std_out = open(config.SOPDS_SCANNER_LOG, 'a+')
