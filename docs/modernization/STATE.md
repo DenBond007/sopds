@@ -2,12 +2,12 @@
 
 - Задача: M08 — выполнить все рекомендации анализа по поручению пользователя 2026-10-18.
 - Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; push/CI требуют явного подтверждения после auto-review rejection.
-- M08.1–M08.5 done; M08.6 in_progress: публикация отдельной проверенной ветки для CI и итоговая фиксация.
+- M08.1–M08.5 done; M08.6 blocked только внешним push/CI: автоматическая проверка требует согласия пользователя. Все независимые локальные работы завершены.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
 - Реализованы: корректные ссылки и stateless Basic; совместные web/OPDS фильтры; отдельные личные списки; FB2 reader с серверной позицией; staff-only operations.
 - 0007 добавляет ReadingState/ServiceStatus; constraints уникальности/позиции. Старые модели не меняются.
 - Проверки: 24 адресных links/auth, 39 features/SQL/migrations, 22 browser/scanner/retention; OK.
-- Полный набор: 200/200 за 85.315 с, включая настоящий Chromium desktop/mobile, CSRF и scroll save/restore. Дополнительные 2 теста schedule и 1 retention — OK.
+- Полный набор: 200/200 за 85.315 с, включая настоящий Chromium desktop/mobile, CSRF и scroll save/restore. Ещё 3 новых теста schedule/общего backup-lock прошли отдельно; адресный набор обслуживания 4/4.
 - Первый общий прогон нашёл guard для Feed.get_object(None); исправлен, 7 адресных и повторный полный набор прошли.
 - Benchmark: 100000 синтетических книг, 7 повторов; OFFSET median 14.576 мс, PK-range 0.626 мс; substring 14.889 мс; 300 duplicate rows 301→4 SQL. Данные откатились, отдельная БД удалена.
 - Сопровождение: npm-lock/Dart Sass; Gulp/Bower в legacy; fingerprint vendored-компонентов; test-only CI с браузером, синтаксисом, CSS и миграциями; monthly Dependabot uv/npm/Actions.
@@ -25,5 +25,8 @@
 - Нативная dev-БД не мигрировалась. Общие тесты создавали и удаляли только test_sopds_m08; benchmark — только sopds_bench_m08_20261018.
 - Посторонний ._sopds-codex-start.zip не трогать. Локальные env, credentials, backup и книги не коммитить.
 - Публикация: автоматическая проверка отклонила commit+push в DenBond007/sopds из-за отсутствия отдельного согласия на точные payload/destination; вопрос задан. Другой путь отправки не используется.
-- Backup завершает также Caddy на время снимка CA; реальные app/Caddy image IDs и uv.lock hash входят в manifest. Далее проверка этой финальной версии обслуживания.
-- Следующий шаг: commit собственных проверенных файлов, push codex/library-operations, результат удалённого CI; итоговый backup с image ID/commit, финальные health/расписание. Детали — m08-library-operations.md.
+- Backup завершает также Caddy на время снимка CA; реальные app/Caddy image IDs и uv.lock hash входят в manifest. Финальная версия с общим lock полностью проверена реальным backup/restore.
+- Финальный snapshot: sopds-20261018T091240Z-73c49c23; код backup 24e223a, app/Caddy image IDs и uv.lock hash записаны, 24/24 таблицы восстановлены и совпали.
+- Финальные проверки: uv frozen/offline, npm ci/offline + CSS reproducibility, Python/vendor/diff, migrate --check/makemigrations, web/TLS health — OK. Deploy check: только намеренный W004. Docker/cron enabled; wrapper не повторяет успешный backup сегодня.
+- Локальные коммиты: 22ee7b6 (функции/CI/операции), 0acf343 (снимок CA), 24e223a (общий backup-lock). Remote не изменён.
+- Следующий шаг: получить ответ на явное разрешение отправить codex/library-operations в DenBond007/sopds, затем push и проверка нового GitHub Actions. Физическая читалка и reboot остаются внешними проверками. Детали — m08-library-operations.md.
