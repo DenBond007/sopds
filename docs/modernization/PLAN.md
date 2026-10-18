@@ -270,7 +270,7 @@ HSTS не включался.
 | M08.3 | Диагностика, backup до/после 0007 с полным restore, 7 snapshots, ежедневный rootless cron; 3 теста schedule/retention | done |
 | M08.4 | 100000 искусственных книг: random median 14.576→0.626 мс, 300 дубликатов 301→4 SQL; данные откатились, БД удалена | done |
 | M08.5 | Общие фильтры/дубликаты, узкие исключения, fingerprints vendor, npm-lock/Dart Sass, browser/static/syntax CI и Dependabot uv/npm/Actions | done |
-| M08.6 | Локально: 200 общих + 3 новых адресных, Docker/TLS/миграции/24-table restore/cron готовы. Push и удалённый CI ждут явного согласия после auto-review rejection | blocked |
+| M08.6 | Локально: 200 общих + 3 новых адресных, Docker/TLS/миграции/24-table restore/cron готовы. Пользователь явно разрешил push codex/library-operations в DenBond007/sopds; проверяется удалённый CI | in_progress |
 
 M08.6: первый полный прогон выявил прямой legacy-вызов `Feed.get_object(None)`;
 исправлен guard запроса, 7 адресных и повторные 200/200 за 85.315 с прошли.
@@ -284,10 +284,10 @@ Docker оставлен на 9444 с restart unless-stopped. Linger=no, поэт
 зависящего от login user timer установлен блок существующего user cron;
 московское время учитывается wrapper, чужие задания сохранены.
 
-Публикация M08 остановлена автоматической проверкой полномочий: требуется явное
-согласие на точные изменения и GitHub destination DenBond007/sopds, ветка
-codex/library-operations. Вопрос пользователю задан; обход через другой способ
-публикации не используется. Локальные проверки/backup продолжаются независимо.
+После первоначального отказа автоматической проверки пользователь 2026-10-18
+явно разрешил публикацию проверенных изменений в codex/library-operations
+репозитория DenBond007/sopds. M08.6 возобновлена: push и проверка GitHub Actions;
+.local, книги, backup и секреты исключены из публикации.
 
 Итог локальной проверки M08: commit 22ee7b6, исправления backup 0acf343/24e223a.
 Финальный snapshot sopds-20261018T091240Z-73c49c23 восстановлен: 24/24 public-таблицы
@@ -295,5 +295,4 @@ codex/library-operations. Вопрос пользователю задан; об
 ручные и плановые вызовы. uv frozen/offline и npm ci/offline/CSS повторяемы;
 source/vendor/diff, миграции и web/TLS health пройдены. Все пять Docker-служб
 работают, Docker/cron enabled; user cron установлен и проверен на отсутствие
-повторного backup за сегодня. Remote CI не выполнялся: публикация не разрешена
-автоматической проверкой, пользовательский ответ пока отсутствует.
+повторного backup за сегодня. Пользовательское согласие на push получено; удалённый CI ещё не проверен.

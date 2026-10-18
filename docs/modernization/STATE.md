@@ -1,8 +1,8 @@
 # Текущее состояние
 
 - Задача: M08 — выполнить все рекомендации анализа по поручению пользователя 2026-10-18.
-- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; push/CI требуют явного подтверждения после auto-review rejection.
-- M08.1–M08.5 done; M08.6 blocked только внешним push/CI: автоматическая проверка требует согласия пользователя. Все независимые локальные работы завершены.
+- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; пользователь явно разрешил push этой ветки в DenBond007/sopds 2026-10-18; удалённый CI проверяется.
+- M08.1–M08.5 done; M08.6 in_progress: согласие на публикацию получено, следующий шаг — push и фактический результат GitHub Actions. Локальные работы завершены.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
 - Реализованы: корректные ссылки и stateless Basic; совместные web/OPDS фильтры; отдельные личные списки; FB2 reader с серверной позицией; staff-only operations.
 - 0007 добавляет ReadingState/ServiceStatus; constraints уникальности/позиции. Старые модели не меняются.
@@ -24,9 +24,9 @@
 - Внешнее: ответ о названии/версии читалки запрошен; её CA/search/download и полный reboot хоста не проверены. HSTS пока выключен. ARM64 не проверен.
 - Нативная dev-БД не мигрировалась. Общие тесты создавали и удаляли только test_sopds_m08; benchmark — только sopds_bench_m08_20261018.
 - Посторонний ._sopds-codex-start.zip не трогать. Локальные env, credentials, backup и книги не коммитить.
-- Публикация: автоматическая проверка отклонила commit+push в DenBond007/sopds из-за отсутствия отдельного согласия на точные payload/destination; вопрос задан. Другой путь отправки не используется.
+- Публикация разрешена ответом пользователя «Да, опубликовать эту ветку»: codex/library-operations в DenBond007/sopds; .local, книги, backup и секреты исключены.
 - Backup завершает также Caddy на время снимка CA; реальные app/Caddy image IDs и uv.lock hash входят в manifest. Финальная версия с общим lock полностью проверена реальным backup/restore.
 - Финальный snapshot: sopds-20261018T091240Z-73c49c23; код backup 24e223a, app/Caddy image IDs и uv.lock hash записаны, 24/24 таблицы восстановлены и совпали.
 - Финальные проверки: uv frozen/offline, npm ci/offline + CSS reproducibility, Python/vendor/diff, migrate --check/makemigrations, web/TLS health — OK. Deploy check: только намеренный W004. Docker/cron enabled; wrapper не повторяет успешный backup сегодня.
-- Локальные коммиты: 22ee7b6 (функции/CI/операции), 0acf343 (снимок CA), 24e223a (общий backup-lock). Remote не изменён.
-- Следующий шаг: получить ответ на явное разрешение отправить codex/library-operations в DenBond007/sopds, затем push и проверка нового GitHub Actions. Физическая читалка и reboot остаются внешними проверками. Детали — m08-library-operations.md.
+- Локальные коммиты: 22ee7b6 (функции/CI/операции), 0acf343 (снимок CA), 24e223a (общий backup-lock). Push разрешён пользователем, результат CI пока не получен.
+- Следующий шаг: отправить codex/library-operations в DenBond007/sopds по полученному явному согласию, затем проверить новый GitHub Actions. Физическая читалка и reboot остаются внешними проверками. Детали — m08-library-operations.md.
