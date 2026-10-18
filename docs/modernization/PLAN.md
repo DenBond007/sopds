@@ -345,7 +345,7 @@ UID приложения/Caddy 10001 и PostgreSQL 999 подтверждены 
 |---|---|---|
 | M10.1 | Registry-комплект с digest-ссылками, явная загрузка и проверка, совместимость с offline-комплектом | done |
 | M10.2 | GitHub Actions: тесты до публикации app/Caddy, GITHUB_TOKEN, проверка приватности и небольшой artifact | done |
-| M10.3 | Целевые/общие тесты, публикация первого выпуска, проверка GHCR и инструкция для NAS без установки | in_progress |
+| M10.3 | Целевые/общие тесты, публикация первого выпуска, проверка GHCR и инструкция для NAS без установки | done |
 
 M10.3: первый CI прошёл, post-publication проверка остановила run 39129841214:
 GHCR runtime-пакеты оказались доступны anonymous (HEAD 200). Комплект не выпущен.
@@ -360,3 +360,15 @@ Run39143404706: тесты success, scratch seed оказался public, поэ
 не загружался. Новая диагностика требует отдельного private publication repo
 `sopds-images`, запуска сборки выбранного SHA/tag исходного sopds через workflow_dispatch.
 Критерии private/anonymous/pull остаются обязательными; public seed будет удалён.
+
+M10 завершена: private repo `DenBond007/sopds-images`, выпуск source-tag
+`truenas-2026.10.18.3` / source commit7de3c41.
+[Run39143827281](https://github.com/DenBond007/sopds-images/actions/runs/39143827281)
+success: 224/224 теста (88.071 с), private до/после push, anonymous denied,
+реальный pull трёх digest-ссылок и проверка linux/amd64.
+Пакеты `sopds-nas-app` и `sopds-nas-caddy` приватные. Комплект
+`.local/sopds-truenas-ghcr.tar.gz` — 20523 байта; SHA256 и оба YAML проверены
+после скачивания. Runtime первого публичного выпуска и пустой public seed удалены
+строго по известным версиям; одноразовый cleanup workflow удалён из текущей ветки.
+Исходники остаются в публичном sopds; будущие выпуски — Run workflow в private
+sopds-images с выбранным source_ref. Развёртывание на NAS не выполнялось.

@@ -1,6 +1,6 @@
 # Текущее состояние
 
-- Задача: M10 — приватные GHCR-образы и небольшой registry-комплект; развёртывание на NAS явно исключено.
+- Задача: M10 завершена — приватные GHCR-образы опубликованы, малый комплект проверен; развёртывание на NAS явно исключено.
 - Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; опубликована в DenBond007/sopds по явному согласию пользователя; CI для 4a335db success.
 - M08.1–M08.5 done; M08.6 done: CI 39117577380 для исправленного 4a335db success, 203/203 за 82.696 с с Chromium. Повторный 39117210902 выявил race /proc в тесте; точный catch ESRCH/ENOENT проверен 20/20 адресно. M06.3 также закрыта.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
@@ -35,11 +35,12 @@
 - M09 проверки: 19 адресных тестов и 218/218 общего набора с Chrome; Compose из распакованного архива, SHA256, linux/amd64, portable image IDs и UID проверены.
 - Первый M09 browser failure был из-за отсутствия bundled Chromium; существующий SOPDS_BROWSER_EXECUTABLE=/opt/google/chrome/chrome дал успешный адресный и общий прогон.
 - Подготовлены bootstrap/full YAML, сохраняемые секреты, обнаружение Compose-проекта и backup с проверкой восстановления; изменения локальные, публикации не было.
-- M10.1–M10.2 реализованы: registry-комплект, digest/pull-проверки, workflow с тестами и проверкой приватности. 24 адресных и 223/223 общих теста с Chrome прошли (85.703 с); M10.3 in_progress.
-- GHCR: пользователь явно выбрал приватность; Actions использует GITHUB_TOKEN, будущий NAS — PAT classic read:packages.
-- GitHub auth подтверждена; remote codex/library-operations = c4af37c, master остаётся legacy. Выпуски через push тегов truenas-* без merge в master.
-- Первый GHCR run 39129841214: CI прошёл; после push обнаружена публичная доступность новых пакетов вопреки выбранному private. Комплект не опубликован. Требуется удалить только эти две собственные версии и проверять private на пустом seed до загрузки runtime.
-- Исправление: cleanup 39143277809 success; удалены только собственные пакеты с единственной версией bd486b2. Anonymous повторно403. Новые имена sopds-private-app/caddy; private проверяется на пустом scratch seed до runtime, source-label привязки к public repo не используется. 25 адресных тестов прошли.
-- Повтор run39143404706: 224 теста прошли; даже scratch seed без source label получил public. Runtime не загружался. Переход к отдельному private publication repo sopds-images; public workflow больше не будет публиковать образы.
-- Создан private DenBond007/sopds-images (main), публичный workflow ограничен запуском только из него; исходники остаются в sopds, reusable CI закреплён по 80be05e и проверяет выбранный source_ref.
-- Следующий шаг: создать private sopds-images с workflow_dispatch по точному commit исходного sopds; удалить пустой public seed; проверить private/pull и скачать комплект. На NAS ничего не запускать.
+- M10.1–M10.3 done: private repo DenBond007/sopds-images; workflow_dispatch выбирает source_ref исходного публичного sopds. Master не менялся.
+- Выпуск truenas-2026.10.18.3, исходный commit7de3c41; публикация run39143827281 success: 224/224 с Chrome за88.071с, private до/после, anonymous denied, реальный pull всех3 digest и linux/amd64.
+- Пакеты: ghcr.io/denbond007/sopds-nas-app и sopds-nas-caddy (private). PostgreSQL официальный публичный закреплённый amd64 digest.
+- Комплект .local/sopds-truenas-ghcr.tar.gz (20523 байта) + .sha256; скачан artifact12142663066, SHA/allowlist/commit/uvlock и оба YAML проверены.
+- GHCR Actions использует GITHUB_TOKEN; будущий NAS — PAT classic read:packages и постоянный закрытый DOCKER_CONFIG. Токен NAS пока не создавался.
+- Первый выпуск из public repo оказался public; только его две собственные версии удалены (cleanup39143277809), anonymous403 подтверждён. Затем пустой seed тоже былpublic — runtime не передавался, seed удалён (cleanup39143757782). Причина default не установлена; private publisher решает задачу, проверки не ослаблены.
+- Workflow в sopds-images совпадает с .github/workflows/publish-truenas.yml; reusable CI закреплён по80be05e и тестирует тот же source commit. Новые пакеты проверяются на пустом scratch seed до загрузки runtime.
+- Последующие выпуски: отправить source commit/tag, запустить private workflow с source_ref; артефакты хранятся90дней, локальную копию сохранять. Нет автоматического обновления NAS.
+- Следующий шаг: только по отдельному поручению установить на NAS по docs/modernization/truenas.md (версия/IP/пути/ACL/PAT). Сейчас ничего на NAS не развёрнуто; подготовка и приватная публикация завершены.

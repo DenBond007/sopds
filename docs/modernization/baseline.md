@@ -809,3 +809,11 @@ Portainer продолжает работать на 9443. `git diff --check` �
 - Первичный publish run39129841214: Tests success, обе сборки прошли; API postcheck отказал, anonymous HEAD подтвердил public. По metadata пакеты созданы этим запуском (13:05:26/33 UTC), по одной версии bd486b2; runtime не содержал локальных данных.
 - Cleanup run39143277809 проверил единственную версию, точные digest и commit-tag перед удалением обоих пакетов; success. Повторный независимый anonymous запрос получает403 для обоих.
 - Исправление: новые имена пакетов, пустой scratch seed и подтверждение private/anonymous-denied ДО передачи runtime-слоёв, без source-label привязки к публичному repo. 25 адресных тестов и actionlint проходят.
+
+- Повторный public run39143404706: 224 теста прошли; пустой scratch seed получилpublic, поэтому runtime не передавался. Единственный seed удалён cleanup39143757782; старые имена не используются.
+- Создан private repo DenBond007/sopds-images; source checkout/tag разрешается в точный SHA, public reusable CI@80be05e получает именно этот SHA. Публикация только из private repo; доступ по GITHUB_TOKEN.
+- Финальный [run39143827281](https://github.com/DenBond007/sopds-images/actions/runs/39143827281) success: 224/224 за88.071с с Chromium. API private и anonymous denial проверены для seed и runtime; control.py pull реально скачал app/Caddy/PostgreSQL и проверил digest/linux-amd64; все SHA256SUMS совпали.
+- Source truenas-2026.10.18.3 / 7de3c41277c36aad338f5119bc0f1ecb22b12b15, clean=true. App sha256:d7f81004da4336eac2a0011d6ab35b6f9ffd289081194ebbae670bd1e809d1ac; Caddy sha256:f42cdca92c34d48ac5dc9e82b661609421f746ddd790cd1dcff76d5f831a1acb.
+- Artifact12142663066 скачан; архив .local/sopds-truenas-ghcr.tar.gz, 20523 байта, SHA256 dc731ab3bd2d5da0890894c5438d29e3925d0111567e560cf8143fec75c39df6. Девять ожидаемых файлов + каталог, без images.tar/deployment/секретов; внутренние SHA, source commit и uv.lock проверены.
+- Оба YAML из скачанного комплекта (отдельная validation-only копия с примером настроек) прошли Compose config --quiet; независимые anonymous HEAD новых runtime digest отклонены. Копия архива не персонализировалась.
+- NAS не подключался, установка/обновление/расписание на NAS не выполнялись. PAT пользователя не создавался и не запрашивался.
