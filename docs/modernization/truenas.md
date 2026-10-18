@@ -145,7 +145,8 @@ PostgreSQL major-version upgrades require a separate migration.
 
 Maintainers publish the tested source commit from `codex/library-operations` via
 [the private publisher](https://github.com/DenBond007/sopds-images/actions/workflows/publish-truenas.yml).
-Legacy `master` is not used. Publication still checks package privacy **before**
+Use a full 40-character commit SHA, branch or release tag; abbreviated SHA values
+are treated as branch names by checkout. Legacy `master` is not used. Publication still checks package privacy **before**
 application layers, checks privacy again and rejects anonymous access afterward.
 The private workflow emits `sopds-truenas.yaml` directly in its artifact alongside
 the optional existing kit. The renderer couples the app digest and readiness ID.

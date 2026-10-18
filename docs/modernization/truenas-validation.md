@@ -36,6 +36,11 @@ inside the disposable smoke PostgreSQL server, with Chromium explicitly enabled.
 Local logs: `.local/logs/m11/`; offline kit: `.local/sopds-truenas-m11-offline.tar.gz`.
 Both are excluded from Git. All smoke containers/networks/synthetic directories
 are cleaned up; existing local services/data are not used or changed.
+Source CI 39146844920 ran all 236 tests, including Chromium, and found one
+Compose-version test serialization error: Compose v2 omits false booleans from
+normalized JSON. The assertion now accepts that representation while checking
+all five explicit `create_host_path: false` declarations. A real missing-path
+rejection test is added to the smoke; full CI will rerun before publication.
 Private publisher CI, final image digests, package privacy and anonymous denial
 will be recorded after publication.
 

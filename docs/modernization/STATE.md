@@ -45,4 +45,5 @@
 - Последующие выпуски: отправить source commit/tag, запустить private workflow с source_ref; артефакты хранятся90дней, локальную копию сохранять. Нет автоматического обновления NAS.
 - M11: init/checkpoint и release-readiness в app/Caddy реализованы; один YAML-шаблон и renderer, документирован подтверждённый registry UI для 24.10/25.04+.
 - M11 local done: 236/236 за95.633с с Chrome; first/repeat/credentials/mount/SIGKILL→rollback→retry, TLS/auth/UID/RO и сохранность account/settings/genre/ID/shelf/position/CA. Offline-kit SHA/image/platform/оба YAML проверены; uv/npm/CSS/source/vendor/schema/actionlint OK.
-- Следующий шаг: опубликовать проверенный source SHA в codex/library-operations и через private sopds-images; дождаться CI/anonymous-denial и закрепить фактические digest в конечном YAML. NAS deployment запрещён.
+- CI39146844920: 236 тестов/Chrome, один новый contract-test error: Compose v2 опускает false в JSON; проверка совместимости исправлена, добавлен реальный missing-path отказ. Runtime-код не менялся.
+- Следующий шаг: адресная проверка и повторный полный CI нового source SHA; private publication/anonymous-denial и конечный YAML с digest. NAS deployment запрещён.

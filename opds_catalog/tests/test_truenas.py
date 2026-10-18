@@ -374,6 +374,8 @@ class StandaloneComposeTests(TestCase):
                                 input=text, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         config = json.loads(result.stdout)
+        self.assertEqual(text.count('create_host_path: false'), 5)
+        self.assertNotIn('create_host_path: true', text)
         services = config['services']
         self.assertEqual(set(services), {'db', 'init', 'web', 'scanner', 'annotations', 'caddy'})
         for name, service in services.items():
@@ -386,7 +388,8 @@ class StandaloneComposeTests(TestCase):
             for mount in service['volumes']:
                 self.assertEqual(mount['type'], 'bind')
                 self.assertTrue(mount['source'].startswith('/mnt/'))
-                self.assertFalse(mount['bind']['create_host_path'])
+                # Compose v2 omits false booleans from normalized JSON.
+                self.assertFalse(mount.get('bind', {}).get('create_host_path', False))
             if name != 'db':
                 self.assertEqual(service['user'], '10001:10001')
                 self.assertTrue(service['read_only'])

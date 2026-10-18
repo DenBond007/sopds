@@ -216,6 +216,15 @@ def main():
         directory.chmod(0o755)
         with stack(args, directory, 'first') as probe:
             init = probe.config['services']['init']
+            missing = probe.root / 'missing-books'
+            mounts = [mount for service in probe.config['services'].values() for mount in service.get('volumes', []) if mount['target'] == '/library']
+            for mount in mounts:
+                mount['source'] = str(missing)
+            probe.up(succeeds=False)
+            assert not missing.exists(), 'Compose created a missing host library directory'
+            for mount in mounts:
+                mount['source'] = str(probe.root / 'books')
+            print('Missing host path is rejected without creating a directory: OK', flush=True)
             init['environment']['SOPDS_ADMIN_PASSWORD'] = 'CHANGE_ME_BAD_PASSWORD'
             probe.up(succeeds=False)
             init['environment']['SOPDS_ADMIN_PASSWORD'] = PASSWORD

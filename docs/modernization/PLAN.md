@@ -402,3 +402,10 @@ Offline archive/file SHA256, image/platform и оба kit YAML проверен�
 npm ci/offline/CSS, source/vendor/schema/actionlint/diff прошли. Следующий шаг —
 публикация точного source SHA через private publisher с прежними privacy gates,
 CI synthetic smoke и фиксация фактических digest в конечном YAML.
+
+M11 CI39146844920: 236 тестов/Chromium выполнены; один error нового contract-test
+из-за omitempty(false) Compose v2 JSON. Исправлена совместимость представления без
+ослабления требования: все 5 bind declarations должны быть explicit false; synthetic
+smoke дополнен реальным отсутствующим host path (отказ, без mkdir). Runtime не менялся.
+Первый private dispatch39146906128 отклонил short SHA до tests/publish; использовать full40 SHA.
+Следующий source CI/private run должны пройти полностью до фиксации итогового YAML.
