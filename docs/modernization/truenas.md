@@ -29,11 +29,13 @@ Workflow [Publish private TrueNAS images](https://github.com/DenBond007/sopds/ac
 срабатывает при отправке тега `truenas-*` в `DenBond007/sopds`.
 Сначала проходит полный набор тестов, включая Chromium, затем собираются два образа:
 
-- `ghcr.io/denbond007/sopds-app:sha-<commit>` — web/scanner/annotations/manage;
-- `ghcr.io/denbond007/sopds-caddy:sha-<commit>` — HTTPS.
+- `ghcr.io/denbond007/sopds-private-app:sha-<commit>` — web/scanner/annotations/manage;
+- `ghcr.io/denbond007/sopds-private-caddy:sha-<commit>` — HTTPS.
 
 Оба пакета **private**. Workflow проверяет видимость до/после публикации и отказ
-анонимного чтения. Существующий публичный пакет отклоняется. Для публикации используется
+анонимного чтения. До первой загрузки приложения создаётся пустой scratch seed
+и проверяется фактическая приватность пакета; исходников/слоёв приложения в seed нет.
+Существующий публичный пакет отклоняется. Для публикации используется
 временный `GITHUB_TOKEN` с `packages: write`; отдельный PAT в GitHub Secrets не нужен.
 PostgreSQL берётся из официального публичного образа по закреплённому amd64 digest.
 

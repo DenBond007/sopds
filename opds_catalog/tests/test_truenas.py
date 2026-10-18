@@ -330,3 +330,21 @@ class RegistryPrivacyTests(TestCase):
         with patch.object(registry, 'request_json', return_value={'token': 'anonymous-test-token'}), patch.object(registry, 'urlopen'):
             with self.assertRaisesRegex(RuntimeError, 'allowed'):
                 registry.check_anonymous_denied(reference)
+
+    def test_initialization_never_uploads_application_content_before_private_check(self):
+        def build(command, check):
+            root = Path(command[-1])
+            self.assertEqual({path.name for path in root.iterdir()}, {'Dockerfile'})
+            self.assertEqual((root / 'Dockerfile').read_text(), 'FROM scratch\nLABEL io.sopds.purpose="empty registry privacy probe"\n')
+            metadata = Path(command[command.index('--metadata-file') + 1])
+            metadata.write_text(json.dumps({'containerimage.digest': 'sha256:' + 'a' * 64}))
+        with patch.object(registry, 'check_package', side_effect=[False, RuntimeError('public')]) as visibility, \
+                patch.object(registry.subprocess, 'run', side_effect=build), \
+                patch.object(registry, 'check_anonymous_denied') as anonymous:
+            with self.assertRaisesRegex(RuntimeError, 'public'):
+                registry.initialize_private_package('owner', 'app', 'test-token')
+            self.assertEqual(visibility.call_count, 2)
+            anonymous.assert_not_called()
+        with patch.object(registry, 'check_package', return_value=True), patch.object(registry.subprocess, 'run') as build:
+            registry.initialize_private_package('owner', 'app', 'test-token')
+            build.assert_not_called()

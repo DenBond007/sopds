@@ -3,6 +3,9 @@
 import argparse
 import json
 import os
+from pathlib import Path
+import subprocess
+from tempfile import TemporaryDirectory
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -23,12 +26,13 @@ def check_package(owner, package, token, allow_missing=False):
         value = request_json(url, token)
     except HTTPError as error:
         if error.code == 404 and allow_missing:
-            print(package + ': not present or not accessible; GHCR creates new packages private')
-            return
+            print(package + ': not present or not accessible')
+            return False
         raise RuntimeError('Cannot confirm package visibility (HTTP %s)' % error.code) from error
     if value.get('visibility') != 'private':
-        raise RuntimeError(package + ': expected private visibility; publication refused')
+        raise RuntimeError(package + ': expected private visibility, got ' + repr(value.get('visibility')) + '; publication refused')
     print(package + ': private')
+    return True
 
 
 def check_anonymous_denied(reference):
@@ -51,16 +55,38 @@ def check_anonymous_denied(reference):
     raise RuntimeError('Anonymous pull is allowed; private publication requirement failed')
 
 
+def initialize_private_package(owner, package, token):
+    if check_package(owner, package, token, allow_missing=True):
+        return
+    # Prove the registry's actual visibility before uploading any application layers.
+    # This seed contains only an empty scratch config, no source, files or secrets.
+    image = 'ghcr.io/' + owner.lower() + '/' + package
+    with TemporaryDirectory() as folder:
+        root = Path(folder)
+        (root / 'Dockerfile').write_text('FROM scratch\nLABEL io.sopds.purpose="empty registry privacy probe"\n')
+        metadata = root / 'metadata.json'
+        subprocess.run(['docker', 'buildx', 'build', '--platform', 'linux/amd64', '--provenance=false',
+                        '--metadata-file', str(metadata), '--tag', image + ':registry-bootstrap',
+                        '--push', str(root)], check=True)
+        digest = json.loads(metadata.read_text())['containerimage.digest']
+    check_package(owner, package, token)
+    check_anonymous_denied(image + '@' + digest)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--owner', required=True)
     parser.add_argument('--package', action='append', required=True)
     parser.add_argument('--allow-missing', action='store_true')
+    parser.add_argument('--initialize', action='store_true')
     parser.add_argument('--image', action='append', default=[])
     args = parser.parse_args()
     token = os.environ['GH_TOKEN']
     for package in args.package:
-        check_package(args.owner, package, token, args.allow_missing)
+        if args.initialize:
+            initialize_private_package(args.owner, package, token)
+        else:
+            check_package(args.owner, package, token, args.allow_missing)
     for reference in args.image:
         check_anonymous_denied(reference)
 
