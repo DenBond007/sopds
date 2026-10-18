@@ -2,7 +2,7 @@
 
 - Задача: M08 — выполнить все рекомендации анализа по поручению пользователя 2026-10-18.
 - Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; опубликована в DenBond007/sopds по явному согласию пользователя; CI для 2b7a8dc success.
-- M08.1–M08.5 done; M08.6 done: push выполнен, GitHub Actions success, 203/203 теста за 80.881 с с Chromium. M06.3 также закрыта новым результатом CI.
+- M08.1–M08.5 done; M08.6 in_progress: первый remote CI прошёл 203/203; повторный 39117210902 выявил race чтения /proc в test_conversion_process (ProcessLookupError после исчезновения процесса). Обработан только ESRCH/ENOENT, адресный тест 20/20; нужен CI на новом HEAD; M06.3 закрыта первым success.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
 - Реализованы: корректные ссылки и stateless Basic; совместные web/OPDS фильтры; отдельные личные списки; FB2 reader с серверной позицией; staff-only operations.
 - 0007 добавляет ReadingState/ServiceStatus; constraints уникальности/позиции. Старые модели не меняются.
@@ -30,4 +30,4 @@
 - Финальные проверки: uv frozen/offline, npm ci/offline + CSS reproducibility, Python/vendor/diff, migrate --check/makemigrations, web/TLS health — OK. Deploy check: только намеренный W004. Docker/cron enabled; wrapper не повторяет успешный backup сегодня.
 - Локальные коммиты: 22ee7b6 (функции/CI/операции), 0acf343 (снимок CA), 24e223a (общий backup-lock). Remote codex/library-operations опубликован; новый CI прошёл.
 - CI: [39117023516](https://github.com/DenBond007/sopds/actions/runs/39117023516), commit 2b7a8dc; CSS/vendor/source/check/migrations и все 203 теста прошли, browser smoke выполнен без skip. Лог приватно .local/logs/m08-ci-39117023516.log.
-- Следующий шаг: проверка физической читалки пользователем и согласованный reboot хоста; M08 завершена. Детали — m08-library-operations.md.
+- Следующий шаг: опубликовать узкое исправление теста /proc и подтвердить remote CI нового HEAD (адресно 20/20). Физическая читалка/reboot — внешние условия. Детали — m08-library-operations.md.

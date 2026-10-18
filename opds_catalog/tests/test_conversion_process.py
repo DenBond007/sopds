@@ -50,7 +50,8 @@ class ConversionProcessTests(SimpleTestCase):
                 while time.monotonic() < deadline:
                     try:
                         status = Path(f'/proc/{child}/stat').read_text()
-                    except FileNotFoundError:
+                    except (FileNotFoundError, ProcessLookupError):
+                        # The process may disappear while procfs reads its stat.
                         break
                     if status.split(') ', 1)[1].split()[0] == 'Z':
                         break

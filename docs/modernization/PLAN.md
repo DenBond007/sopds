@@ -270,7 +270,7 @@ HSTS не включался.
 | M08.3 | Диагностика, backup до/после 0007 с полным restore, 7 snapshots, ежедневный rootless cron; 3 теста schedule/retention | done |
 | M08.4 | 100000 искусственных книг: random median 14.576→0.626 мс, 300 дубликатов 301→4 SQL; данные откатились, БД удалена | done |
 | M08.5 | Общие фильтры/дубликаты, узкие исключения, fingerprints vendor, npm-lock/Dart Sass, browser/static/syntax CI и Dependabot uv/npm/Actions | done |
-| M08.6 | Локально: 200 общих + 3 новых адресных, Docker/TLS/миграции/24-table restore/cron готовы. Ветка опубликована по явному согласию; GitHub Actions 39117023516 success, 203/203 с Chromium за 80.881 с | done |
+| M08.6 | Локально: 200 общих + 3 новых адресных, Docker/TLS/миграции/24-table restore/cron готовы. Первый CI 39117023516 success 203/203; повторный 39117210902 выявил ProcessLookupError при исчезновении /proc ребёнка в тесте остановки. Добавлен точный catch ESRCH/ENOENT, 20/20 адресных повторов; подтвердить новый HEAD | in_progress |
 
 M08.6: первый полный прогон выявил прямой legacy-вызов `Feed.get_object(None)`;
 исправлен guard запроса, 7 адресных и повторные 200/200 за 85.315 с прошли.
@@ -296,3 +296,9 @@ Docker оставлен на 9444 с restart unless-stopped. Linger=no, поэт
 source/vendor/diff, миграции и web/TLS health пройдены. Все пять Docker-служб
 работают, Docker/cron enabled; user cron установлен и проверен на отсутствие
 повторного backup за сегодня. [Удалённый CI](https://github.com/DenBond007/sopds/actions/runs/39117023516) для 2b7a8dc success: 203/203 теста за 80.881 с, браузерный smoke выполнен; CSS/source/vendor/config/migration checks также прошли. Существующий старый failure не относится к опубликованной ветке. Физическая читалка/доверие CA, reboot хоста и ARM64 остаются непроверенными внешними условиями.
+
+M08.6 повторно открыта: CI на документационном 9a5c3e4 выполнил 203 теста,
+но test_conversion_process получил ProcessLookupError (ESRCH) при чтении уже
+исчезающего /proc/<child>/stat; браузерный smoke прошёл. Проверка принимает
+только отсутствие процесса (ENOENT/ESRCH) либо zombie; общий OSError, живой
+процесс и таймаут не скрываются. Адресный тест прошёл 20/20 последовательных запусков (без БД); требуется новый remote CI. Производственный код не менялся.
