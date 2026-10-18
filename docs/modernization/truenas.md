@@ -146,6 +146,10 @@ PostgreSQL major-version upgrades require a separate migration.
 
 ## Release and verification
 
+This release uses source `9b27b662f137682c66d8773b43075308a34a5ba5`;
+[private publication and all checks succeeded](https://github.com/DenBond007/sopds-images/actions/runs/39147640015).
+The distributed YAML contains the resulting immutable digests.
+
 Maintainers publish the tested source commit from `codex/library-operations` via
 [the private publisher](https://github.com/DenBond007/sopds-images/actions/workflows/publish-truenas.yml).
 Use a full 40-character commit SHA, branch or release tag; abbreviated SHA values

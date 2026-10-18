@@ -1,7 +1,7 @@
 # Текущее состояние
 
-- Задача: M11 in_progress — один самодостаточный YAML для Apps → Install via YAML; повторяемый init, приватный выпуск и изолированные проверки. Развёртывание на NAS запрещено.
-- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; опубликована в DenBond007/sopds по явному согласию пользователя; CI для 4a335db success.
+- Задача: M11 done — один самодостаточный YAML для Apps → Install via YAML; init/guards, тесты и приватный выпуск проверены. На NAS ничего не развёрнуто; deployment запрещён.
+- Ветка: `codex/library-operations`; HEAD до M11 ee0364b; image/source M11 9b27b662f137682c66d8773b43075308a34a5ba5. Опубликована только эта ветка; legacy master не менялся.
 - M08.1–M08.5 done; M08.6 done: CI 39117577380 для исправленного 4a335db success, 203/203 за 82.696 с с Chromium. Повторный 39117210902 выявил race /proc в тесте; точный catch ESRCH/ENOENT проверен 20/20 адресно. M06.3 также закрыта.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
 - Реализованы: корректные ссылки и stateless Basic; совместные web/OPDS фильтры; отдельные личные списки; FB2 reader с серверной позицией; staff-only operations.
@@ -39,7 +39,7 @@
 - Выпуск truenas-2026.10.18.3, исходный commit7de3c41; публикация run39143827281 success: 224/224 с Chrome за88.071с, private до/после, anonymous denied, реальный pull всех3 digest и linux/amd64.
 - Пакеты: ghcr.io/denbond007/sopds-nas-app и sopds-nas-caddy (private). PostgreSQL официальный публичный закреплённый amd64 digest.
 - Комплект .local/sopds-truenas-ghcr.tar.gz (20523 байта) + .sha256; скачан artifact12142663066, SHA/allowlist/commit/uvlock и оба YAML проверены.
-- GHCR Actions использует GITHUB_TOKEN; будущий NAS — PAT classic read:packages и постоянный закрытый DOCKER_CONFIG. Токен NAS пока не создавался.
+- GHCR Actions: GITHUB_TOKEN; NAS — PAT classic read:packages через Apps registry UI (25.04+) или authenticated Pull Image (24.10, полный digest и пустой tag). Shell docker login не считается авторизацией Apps. NAS/PAT не настраивались.
 - Первый выпуск из public repo оказался public; только его две собственные версии удалены (cleanup39143277809), anonymous403 подтверждён. Затем пустой seed тоже былpublic — runtime не передавался, seed удалён (cleanup39143757782). Причина default не установлена; private publisher решает задачу, проверки не ослаблены.
 - Workflow в sopds-images совпадает с .github/workflows/publish-truenas.yml; reusable CI закреплён по80be05e и тестирует тот же source commit. Новые пакеты проверяются на пустом scratch seed до загрузки runtime.
 - Последующие выпуски: отправить source commit/tag, запустить private workflow с source_ref; артефакты хранятся90дней, локальную копию сохранять. Нет автоматического обновления NAS.
@@ -47,4 +47,6 @@
 - M11 local done: 236/236 за95.633с с Chrome; first/repeat/credentials/mount/SIGKILL→rollback→retry, TLS/auth/UID/RO и сохранность account/settings/genre/ID/shelf/position/CA. Offline-kit SHA/image/platform/оба YAML проверены; uv/npm/CSS/source/vendor/schema/actionlint OK.
 - CI39146844920: 236 тестов/Chrome, один новый contract-test error: Compose v2 опускает false в JSON; проверка совместимости исправлена, добавлен реальный missing-path отказ. Runtime-код не менялся.
 - M11 failure-review: PostgreSQL placeholder нужно отклонять до initdb, иначе исправление YAML оставит старый пароль кластера. Добавлен self-contained shell guard и synthetic PG_VERSION-before/after проверка.
-- Следующий шаг: адресный smoke/контракт и полный CI окончательного YAML; private publication/anonymous-denial и конечный YAML с digest. NAS deployment запрещён.
+- M11 final: private run39147640015 success; 236/236 за73.413с с Chrome; published-image полный synthetic smoke пройден; private до/после и anonymous denied, 3 pinned amd64 pull проверены. Source CI39147639184: 236/236 за81.359с.
+- Итог: infra/truenas/compose.yaml (SHA256 67f0089870938795376641dc0d643ad410c8ef8867a3ad1ecc623eb75308ef19) точно совпадает с CI artifact; SHA/allowlist/source/uvlock и локальный Compose проверены; independent anonymous denied. Инструкции/границы — truenas.md и truenas-validation.md.
+- Дальше: только при отдельном разрешении — NAS acceptance (версия/UI registry/ACL/CA reader/reboot/реальные данные). Подготовка завершена; deployment сейчас не разрешён. Локальные службы/данные и посторонний ZIP сохранены.

@@ -1,0 +1,215 @@
+# SOPDS / TrueNAS SCALE 24.10+ / linux/amd64
+# Paste this WHOLE file into Apps -> Discover Apps -> Install via YAML.
+# First prepare datasets/permissions and private registry access: docs/modernization/truenas.md.
+# EDIT ONLY the settings below. Keep a private copy; it contains your credentials.
+# Use independent random hex strings (64+ characters) for the three infrastructure secrets.
+# Compose interprets dollars even inside quotes: write $$ for each literal $ in a password.
+# Never change existing DB passwords here to rotate them. Stop the app before an update.
+x-sopds-settings:
+  nas_ip: &nas-ip '192.0.2.10'                    # CHANGE: actual LAN IPv4 of the NAS
+  https_port: &https-port '9444'                  # CHANGE: unused port on that IP
+  timezone: &timezone 'Europe/Moscow'             # CHANGE if needed
+  books: &books '/mnt/CHANGE_ME/books'             # CHANGE: existing books, read-only
+  pgdata: &pgdata '/mnt/CHANGE_ME/sopds/pgdata'     # CHANGE: UID:GID 999:999, 0700
+  static: &static '/mnt/CHANGE_ME/sopds/static'     # CHANGE: 10001:10001, 0755
+  tls_data: &tls-data '/mnt/CHANGE_ME/sopds/caddy-data'     # CHANGE: 10001:10001, 0700
+  tls_config: &tls-config '/mnt/CHANGE_ME/sopds/caddy-config' # CHANGE: 10001:10001, 0700
+  django_secret: &django-secret 'CHANGE_ME_DJANGO_64_RANDOM_HEX'
+  postgres_password: &postgres-password 'CHANGE_ME_POSTGRES_64_RANDOM_HEX'
+  app_db_password: &app-db-password 'CHANGE_ME_APP_DB_64_RANDOM_HEX'
+  admin_username: &admin-username 'CHANGE_ME_ADMIN_USERNAME'
+  admin_email: &admin-email 'CHANGE_ME@example.invalid'
+  admin_password: &admin-password 'CHANGE_ME_ADMIN_PASSWORD_16_OR_MORE_CHARACTERS'
+# END OF ADMINISTRATOR SETTINGS. Release images and readiness ID are generated together.
+
+x-app: &app
+  image: ghcr.io/denbond007/sopds-nas-app@sha256:c497315352afe8d1550cc0e394a92e22206dd8153e907bcb19a01080b7fb34e1
+  platform: linux/amd64
+  pull_policy: missing
+  user: '10001:10001'
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=512m,mode=1777
+  environment: &app-environment
+    DJANGO_SETTINGS_MODULE: sopds.settings_private
+    SOPDS_SECRET_KEY: *django-secret
+    SOPDS_PRIVATE_HOST: *nas-ip
+    SOPDS_STATIC_ROOT: /srv/static
+    SOPDS_RELEASE: sha256:c497315352afe8d1550cc0e394a92e22206dd8153e907bcb19a01080b7fb34e1
+    SOPDS_REQUIRE_INITIALIZED: '1'
+    TIME_ZONE: *timezone
+    DB_NAME: sopds
+    DB_USER: sopds
+    DB_PASS: *app-db-password
+    DB_HOST: db
+    DB_PORT: '5432'
+  volumes:
+    - &books-mount
+      type: bind
+      source: *books
+      target: /library
+      read_only: true
+      bind:
+        create_host_path: false
+    - &static-mount
+      type: bind
+      source: *static
+      target: /srv/static
+      read_only: true
+      bind:
+        create_host_path: false
+  networks: [backend]
+  depends_on: &initialized
+    db:
+      condition: service_healthy
+    init:
+      condition: service_completed_successfully
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
+services:
+  db:
+    image: postgres:17.11-bookworm@sha256:91eb910c44c7ed13f7f1a4ccadaa9ca72ef14cddc04cacb6e070e48eb44731a3
+    platform: linux/amd64
+    pull_policy: missing
+    user: '999:999'
+    # Refuse template credentials BEFORE PostgreSQL writes a new persistent cluster.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        case "$${POSTGRES_PASSWORD:-}" in
+          CHANGE_ME*|change_me*|REPLACE_*|replace_*|'')
+            echo 'Set postgres_password before starting the database.' >&2
+            exit 1 ;;
+        esac
+        if [ "$${#POSTGRES_PASSWORD}" -lt 32 ]; then
+          echo 'postgres_password must have at least 32 characters.' >&2
+          exit 1
+        fi
+        exec /usr/local/bin/docker-entrypoint.sh postgres
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      POSTGRES_DB: sopds
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: *postgres-password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      TZ: *timezone
+    volumes:
+      - type: bind
+        source: *pgdata
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
+    networks: [backend]
+    healthcheck:
+      test: [CMD, pg_isready, -h, '127.0.0.1', -U, postgres, -d, sopds]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 60s
+    logging: *logging
+
+  init:
+    <<: *app
+    command: [python, manage.py, sopds_initialize]
+    restart: 'no'
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *app-environment
+      SOPDS_REQUIRE_INITIALIZED: '0'
+      POSTGRES_PASSWORD: *postgres-password
+      SOPDS_ADMIN_USERNAME: *admin-username
+      SOPDS_ADMIN_EMAIL: *admin-email
+      SOPDS_ADMIN_PASSWORD: *admin-password
+    volumes:
+      - *books-mount
+      - <<: *static-mount
+        read_only: false
+
+  web:
+    <<: *app
+    command: [gunicorn, --config, infra/gunicorn.conf.py, --bind, '0.0.0.0:8000', 'sopds.wsgi:application']
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, infra/docker/healthcheck.py]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 345s
+
+  scanner:
+    <<: *app
+    command: [python, manage.py, sopds_scanner, run]
+    restart: unless-stopped
+    stop_grace_period: 300s
+
+  annotations:
+    <<: *app
+    command: [python, manage.py, sopds_annotation_worker]
+    restart: unless-stopped
+    stop_grace_period: 60s
+
+  caddy:
+    image: ghcr.io/denbond007/sopds-nas-caddy@sha256:1c5f4f665baf06d30614f9a33d80e0611fbeadb197c130cef1ecaeb83712eaaa
+    platform: linux/amd64
+    pull_policy: missing
+    user: '10001:10001'
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777
+    environment:
+      SOPDS_PRIVATE_HOST: *nas-ip
+      SOPDS_RELEASE: sha256:c497315352afe8d1550cc0e394a92e22206dd8153e907bcb19a01080b7fb34e1
+      SOPDS_REQUIRE_INITIALIZED: '1'
+    ports:
+      - target: 8443
+        published: *https-port
+        host_ip: *nas-ip
+        protocol: tcp
+    volumes:
+      - *static-mount
+      - type: bind
+        source: *tls-data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: *tls-config
+        target: /config
+        bind:
+          create_host_path: false
+    networks: [ingress, backend]
+    depends_on:
+      <<: *initialized
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /bin/sh, /usr/local/bin/sopds-caddy-healthcheck]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 345s
+    logging: *logging
+
+networks:
+  ingress:
+  backend:
+    internal: true

@@ -382,8 +382,8 @@ sopds-images с выбранным source_ref. Развёртывание на N
 | ID | Задача и критерий | Статус |
 |---|---|---|
 | M11.1 | Init в image: PostgreSQL healthy → миграции → атомарная первичная настройка/администратор → static; повторы сохраняют данные и настройки | done |
-| M11.2 | Один YAML с pinned images, явными настройками, RO books и init dependency; подтверждённый registry auth по версиям SCALE; offline kit сохранён | in_progress |
-| M11.3 | Изолированные synthetic first/repeat/failure проверки, полный обязательный набор, приватная публикация, конечный YAML и документация | in_progress |
+| M11.2 | Один YAML с pinned images, явными настройками, RO books и init dependency; подтверждённый registry auth по версиям SCALE; offline kit сохранён | done |
+| M11.3 | Изолированные synthetic first/repeat/failure проверки, полный обязательный набор, приватная публикация, конечный YAML и документация | done |
 
 Новый формат нужен, чтобы на NAS не требовались архив/checkout/.env/host script/Python.
 Готовность: опубликованные digest в конечном YAML и проверенная локально/CI последовательность;
@@ -414,3 +414,19 @@ M11 дополнительный отказ: PG password placeholder долже�
 нового PGDATA; иначе исправленный YAML не совпадёт с уже сохранённым паролем.
 В YAML добавлен non-root guard перед штатным entrypoint (без host script и без
 сброса паролей); synthetic smoke проверяет отсутствие PG_VERSION при отказе.
+
+M11 завершена: source 9b27b662f137682c66d8773b43075308a34a5ba5,
+[private CI/publication 39147640015](https://github.com/DenBond007/sopds-images/actions/runs/39147640015) success.
+236/236 за73.413с с Chromium; source CI39147639184 также success (236/236,81.359с).
+Опубликованные amd64 digest прошли реальный standalone smoke: PG placeholder
+до initdb, missing path без mkdir, first/repeat, credentials/mount failure,
+SIGKILL внутри seed с rollback/retry, сохранность account/settings/genre/ID/shelf/
+position/CA, TLS/401/200/static/UID/RO. Private до/после upload; anonymous denied
+в CI и независимо локально. Все 3 digest pulled/проверены в CI.
+Конечный infra/truenas/compose.yaml точно совпадает с artifact и renderer;
+SHA archive/files, allowlist, source/uvlock и локальный Compose подтверждены.
+Offline kit сохранён и отдельно собран/проверен; 27 адресных регрессий прошли.
+Инструкция truenas.md, детали truenas-validation.md; прежний kit — truenas-kit.md.
+Локальные службы и данные не менялись; master не менялся. NAS deployment не
+выполнялся и запрещён текущим заданием. NAS UI/ACL/private pull/reader CA/reboot
+и перенос реальных данных остаются внешней приёмкой только по новому поручению.

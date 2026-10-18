@@ -1,6 +1,7 @@
 # Single-YAML TrueNAS verification (M11)
 
-Local verification passed on 2026-10-18; private publication/CI verification is pending.
+Local and CI verification passed on 2026-10-18. The delivered YAML is byte-for-byte
+the successful private publisher artifact, built from source `9b27b662f137682c66d8773b43075308a34a5ba5`.
 No deployment to TrueNAS is authorized or performed.
 
 The developer/CI harness `scripts/truenas/smoke-compose.py` uses fresh synthetic
@@ -42,9 +43,35 @@ Source CI 39146844920 ran all 236 tests, including Chromium, and found one
 Compose-version test serialization error: Compose v2 omits false booleans from
 normalized JSON. The assertion now accepts that representation while checking
 all five explicit `create_host_path: false` declarations. A real missing-path
-rejection test is added to the smoke; full CI will rerun before publication.
-Private publisher CI, final image digests, package privacy and anonymous denial
-will be recorded after publication.
+rejection test was added to the smoke; the final full CI and smoke both passed.
+Final verification succeeded:
+
+| CI / release check | Result |
+|---|---|
+| [Source CI](https://github.com/DenBond007/sopds/actions/runs/39147639184) | 236/236 in 81.359 s, Chromium smoke executed |
+| [Private publisher](https://github.com/DenBond007/sopds-images/actions/runs/39147640015) | All jobs successful; 236/236 in 73.413 s, Chromium executed |
+| Published-image standalone YAML smoke | All first/repeat/placeholder/missing-path/mount/wrong-password/SIGKILL cases passed; only synthetic data |
+| Package privacy | Both packages private before application-layer upload and after publication |
+| Anonymous access | Both rejected after upload in CI and independently from the developer host |
+| Immutable images | All three exact digests pulled and linux/amd64 identity checked in CI |
+| Artifact | Archive/file SHA256, allowlist, source commit, clean checkout and uv.lock identity checked after download |
+| Final YAML | Exact renderer/artifact match and local Compose validation; no real credentials |
+| Final targeted regression group | 27/27 registry/offline/YAML/backup tests |
+
+Artifacts are saved locally in `.local/m11-published-39147640015/`, outside Git.
+The NAS needs only [compose.yaml](../../infra/truenas/compose.yaml).
+
+| Component | Published immutable reference |
+|---|---|
+| app | `ghcr.io/denbond007/sopds-nas-app@sha256:c497315352afe8d1550cc0e394a92e22206dd8153e907bcb19a01080b7fb34e1` |
+| caddy | `ghcr.io/denbond007/sopds-nas-caddy@sha256:1c5f4f665baf06d30614f9a33d80e0611fbeadb197c130cef1ecaeb83712eaaa` |
+| db | `postgres:17.11-bookworm@sha256:91eb910c44c7ed13f7f1a4ccadaa9ca72ef14cddc04cacb6e070e48eb44731a3` |
+
+SHA256 of the unpersonalized YAML:
+`67f0089870938795376641dc0d643ad410c8ef8867a3ad1ecc623eb75308ef19`.
+Editing administrator settings naturally changes this hash.
+The source branch is `codex/library-operations`; legacy `master` was not modified.
+The existing local services stayed running and healthy at their original ports.
 
 Initial synthetic runs found and corrected URL checks persisting Constance
 settings before seeding, Caddy CMD inheritance after a new ENTRYPOINT, and a
