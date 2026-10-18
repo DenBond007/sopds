@@ -40,4 +40,5 @@
 - GitHub auth подтверждена; remote codex/library-operations = c4af37c, master остаётся legacy. Выпуски через push тегов truenas-* без merge в master.
 - Первый GHCR run 39129841214: CI прошёл; после push обнаружена публичная доступность новых пакетов вопреки выбранному private. Комплект не опубликован. Требуется удалить только эти две собственные версии и проверять private на пустом seed до загрузки runtime.
 - Исправление: cleanup 39143277809 success; удалены только собственные пакеты с единственной версией bd486b2. Anonymous повторно403. Новые имена sopds-private-app/caddy; private проверяется на пустом scratch seed до runtime, source-label привязки к public repo не используется. 25 адресных тестов прошли.
-- Следующий шаг: опубликовать truenas-2026.10.18.2 и проверить новый защищённый процесс, скачать комплект только после private/anonymous/pull checks. На NAS ничего не запускать.
+- Повтор run39143404706: 224 теста прошли; даже scratch seed без source label получил public. Runtime не загружался. Переход к отдельному private publication repo sopds-images; public workflow больше не будет публиковать образы.
+- Следующий шаг: создать private sopds-images с workflow_dispatch по точному commit исходного sopds; удалить пустой public seed; проверить private/pull и скачать комплект. На NAS ничего не запускать.

@@ -355,3 +355,8 @@ Cleanup 39143277809 success: единственные собственные в�
 anonymous HEAD теперь403. Созданы новые имена sopds-private-app/caddy;
 проверка scratch seed предшествует загрузке runtime. 25 адресных тестов прошли.
 Повторный выпуск truenas-2026.10.18.2 ожидается; установка NAS по-прежнему исключена.
+
+Run39143404706: тесты success, scratch seed оказался public, поэтому runtime
+не загружался. Новая диагностика требует отдельного private publication repo
+`sopds-images`, запуска сборки выбранного SHA/tag исходного sopds через workflow_dispatch.
+Критерии private/anonymous/pull остаются обязательными; public seed будет удалён.

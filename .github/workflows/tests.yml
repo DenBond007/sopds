@@ -5,6 +5,13 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      source_repository:
+        type: string
+        required: false
+      source_ref:
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -40,6 +47,9 @@ jobs:
       SOPDS_ALLOWED_HOSTS: testserver,127.0.0.1,localhost
     steps:
       - uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.source_repository || github.repository }}
+          ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
