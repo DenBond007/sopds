@@ -1,0 +1,9 @@
+{
+  "host": "192.0.2.10",
+  "port": 9444,
+  "timezone": "Europe/Moscow",
+  "library": "/mnt/tank/books",
+  "data_dir": "/mnt/tank/apps/sopds/data",
+  "backup_dir": "/mnt/tank/apps/sopds/backups",
+  "package_dir": "/mnt/tank/apps/sopds/package"
+}

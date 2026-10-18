@@ -781,3 +781,27 @@ context default (`unix:///var/run/docker.sock`), без sudo/root на хост�
 Итог M07.2: `DC stop` — все пять контейнеров exited/0 (сводка `.local/m07/final-status.json`).
 Native user services active, HTTPS 8443 с доверенным CA — 401 без входа.
 Portainer продолжает работать на 9443. `git diff --check` — exit 0.
+
+
+## M09 — комплект TrueNAS SCALE без развёртывания, 2026-10-18
+
+- `python3 scripts/truenas/build-kit.py --output .local/sopds-truenas-kit`: exit 0; app/Caddy собраны и вместе с закреплённым PostgreSQL экспортированы. Сервисы не запускались.
+- `python -m unittest opds_catalog.tests.test_truenas opds_catalog.tests.test_backup_retention opds_catalog.tests.test_backup_schedule`: exit 0, 19/19; .local/logs/m09-targeted.log.
+- Первый общий прогон: 214/215, только browser failure (нет bundled Chromium).
+- `DB_NAME=sopds_m09_browser SOPDS_BROWSER_TESTS=1 SOPDS_BROWSER_EXECUTABLE=/opt/google/chrome/chrome .venv/bin/python manage.py test opds_catalog.tests.test_browser --noinput`: exit 0, 1/1, реальный Chrome.
+- После загрузки разрешённого `.local/dev.env` без вывода секретов: `DB_NAME=sopds_m09_final SOPDS_BROWSER_TESTS=1 SOPDS_BROWSER_EXECUTABLE=/opt/google/chrome/chrome .venv/bin/python manage.py test --noinput`: exit 0, Ran 218 tests in 85.292s, 218/218; отдельная test_sopds_m09_final удалена runner. Лог .local/logs/m09-tests-final.log.
+- Python syntax и `git diff --check`: exit 0. Старые SyntaxWarning invalid escape из legacy исходников не менялись.
+- Итоговый tar.gz распакован во временный каталог, SHA256 архива/всех файлов совпали; копии скриптов совпали с репозиторием. Из самого пакета создана приватная временная конфигурация, bootstrap/full config разобраны `docker compose ... --profile tools config --format json` без daemon: build отсутствует, pull never, только HTTPS опубликован, библиотека read-only, bind-пути абсолютные.
+- images.tar: все три платформы linux/amd64, USER app/Caddy=10001:10001, postgres UID/GID=999:999. ID index/manifest/config сохранены для разных Docker image stores.
+- Комплект .local/sopds-truenas-kit.tar.gz, 236201075 байт; .local/sopds-truenas-kit.tar.gz.sha256. Реальных секретов и книг в нём нет.
+- TrueNAS не подключался, развёртывание/расписание/публикация не выполнялись. Приёмка ACL/HTTPS/читалки/reboot остаётся будущей установке.
+
+
+## M10 — приватный GHCR, локальная проверка 2026-10-18
+
+- `python3 -m unittest opds_catalog.tests.test_truenas opds_catalog.tests.test_backup_retention opds_catalog.tests.test_backup_schedule`: 24/24, registry/offline, SHA/allowlist, digest/платформа, отказ анонимного доступа.
+- Общий набор с отдельной `DB_NAME=sopds_m10_final`, Chrome `/opt/google/chrome/chrome`: 223/223 за 85.703 с, браузерный smoke включён; `.local/logs/m10-tests-full.log`. Тестовая БД удалена.
+- `actionlint` v1.7.12 (официальный архив, SHA256 проверен): оба workflow без ошибок. Python syntax и git diff --check прошли.
+- Registry-комплект с демонстрационными digest-ссылками `.local/m10-package-check.tar.gz` создан; оба YAML прошли Compose config --quiet. Это только тест генерации, не выпуск для установки.
+- Workflow публикует только по тегам truenas-* после переиспользуемых тестов; только GITHUB_TOKEN packages:write. Проверяет private и отказ anonymous, выполняет реальный pull перед сохранением небольшого artifact (90 дней).
+- Первый реальный выпуск/проверка GHCR ещё ожидаются; TrueNAS не подключался, установка исключена.

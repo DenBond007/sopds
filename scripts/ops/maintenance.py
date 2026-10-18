@@ -76,6 +76,10 @@ def main():
     parser.add_argument('--retain', type=int, default=7)
     parser.add_argument('--database-only', action='store_true')
     parser.add_argument('--amd64', action='store_true')
+    parser.add_argument('--compose-file', type=Path, action='append')
+    parser.add_argument('--project-name', default='sopds-container')
+    parser.add_argument('--release-file', type=Path)
+    parser.add_argument('--extra-config', type=Path, action='append', default=[])
     args = parser.parse_args()
     if args.retain < 1:
         parser.error('--retain must be positive')
@@ -90,20 +94,55 @@ def main():
         perform_backup(args, backup_root)
 
 
-def perform_backup(args, backup_root):
-    compose = ['docker', 'compose', '--project-name', 'sopds-container',
-               '--env-file', str(args.env_file.resolve()),
-               '-f', str(ROOT / 'infra/docker/compose.yaml')]
+def compose_command(args):
+    files = args.compose_file or [ROOT / 'infra/docker/compose.yaml']
     if args.amd64:
-        compose += ['-f', str(ROOT / 'infra/docker/compose.amd64.yaml')]
+        if args.compose_file:
+            raise ValueError('--amd64 cannot be combined with custom Compose files')
+        files = files + [ROOT / 'infra/docker/compose.amd64.yaml']
+    command = ['docker', 'compose', '--project-name', args.project_name,
+               '--env-file', str(args.env_file.resolve())]
+    for path in files:
+        command += ['-f', str(path.resolve())]
+    return command, files
+
+
+def source_metadata(args):
+    if args.release_file:
+        release = json.loads(args.release_file.read_text())
+        return {key: release[key] for key in ('commit', 'uv_lock_sha256', 'git_working_tree_dirty')}
+    return {'commit': run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).decode().strip(),
+            'uv_lock_sha256': checksum(ROOT / 'uv.lock'),
+            'git_working_tree_dirty': bool(run(['git', '-C', str(ROOT), 'status', '--porcelain']))}
+
+
+def save_configuration(args, files, destination):
+    copies = [(args.env_file, 'runtime.env')]
+    copies += [(path, 'compose-%s.yaml' % i) for i, path in enumerate(files)]
+    if args.release_file:
+        copies.append((args.release_file, 'release.json'))
+    copies += [(path, 'extra-' + path.name) for path in args.extra_config]
+    if len({name for _, name in copies}) != len(copies):
+        raise ValueError('Duplicate backup configuration filenames')
+    for source, name in copies:
+        with (destination / name).open('xb') as output:
+            output.write(source.read_bytes())
+        (destination / name).chmod(0o600)
+
+
+def perform_backup(args, backup_root):
+    compose, config_files = compose_command(args)
+    metadata = source_metadata(args)
     running = set(run(compose + ['ps', '--services', '--status', 'running']).decode().split())
     if not {'db', 'web', 'caddy'}.issubset(running):
-        raise RuntimeError('Start the sopds-container environment before maintenance')
+        raise RuntimeError('Start the selected Compose environment before maintenance')
     services = [name for name in ('scanner', 'annotations', 'web', 'caddy') if name in running]
     web_id = run(compose + ['ps', '-q', 'web']).decode().strip()
     app_image = run(['docker', 'inspect', '--format', '{{.Image}}', web_id]).decode().strip()
     caddy_id = run(compose + ['ps', '-q', 'caddy']).decode().strip()
     caddy_image = run(['docker', 'inspect', '--format', '{{.Image}}', caddy_id]).decode().strip()
+    db_id = run(compose + ['ps', '-q', 'db']).decode().strip()
+    db_image = run(['docker', 'inspect', '--format', '{{.Image}}', db_id]).decode().strip()
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     name = 'sopds-' + stamp + '-' + uuid.uuid4().hex[:8]
     pending = backup_root / ('.pending-' + name)
@@ -126,8 +165,7 @@ def perform_backup(args, backup_root):
                 run(compose + ['run', '--rm', '--no-deps', '--entrypoint', 'tar',
                                'manage', '-C', '/library', '-cf', '-', '.'], output=output)
         # Keep private configuration with its matching snapshot, never in Git.
-        shutil.copyfile(args.env_file, pending/'runtime.env')
-        (pending/'runtime.env').chmod(0o600)
+        save_configuration(args, config_files, pending)
         run(db + ['createdb', '-U', 'postgres', '-O', 'sopds', restore_db])
         created = True
         with (pending/'database.dump').open('rb') as source:
@@ -153,11 +191,10 @@ def perform_backup(args, backup_root):
                     if member.name.startswith('/') or '..' in Path(member.name).parts:
                         raise RuntimeError('Unsafe backup archive member')
         files = {p.name: checksum(p) for p in pending.iterdir() if p.is_file()}
-        commit = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).decode().strip()
         manifest = {'tool': 'sopds-maintenance-v1', 'verified': True,
-            'completed_at': datetime.now(timezone.utc).isoformat(), 'commit': commit,
-            'app_image_id': app_image, 'caddy_image_id': caddy_image, 'uv_lock_sha256': checksum(ROOT/'uv.lock'),
-            'git_working_tree_dirty': bool(run(['git', '-C', str(ROOT), 'status', '--porcelain'])),
+            'completed_at': datetime.now(timezone.utc).isoformat(), **metadata,
+            'app_image_id': app_image, 'caddy_image_id': caddy_image, 'db_image_id': db_image,
+            'compose_project': args.project_name,
             'scope': 'database-and-library' if not args.database_only else 'database-only',
             'files': files, 'tables': fingerprints}
         (pending/'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')

@@ -1,6 +1,6 @@
 # Текущее состояние
 
-- Задача: M08 — выполнить все рекомендации анализа по поручению пользователя 2026-10-18.
+- Задача: M10 — приватные GHCR-образы и небольшой registry-комплект; развёртывание на NAS явно исключено.
 - Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; опубликована в DenBond007/sopds по явному согласию пользователя; CI для 4a335db success.
 - M08.1–M08.5 done; M08.6 done: CI 39117577380 для исправленного 4a335db success, 203/203 за 82.696 с с Chromium. Повторный 39117210902 выявил race /proc в тесте; точный catch ESRCH/ENOENT проверен 20/20 адресно. M06.3 также закрыта.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
@@ -30,4 +30,12 @@
 - Финальные проверки: uv frozen/offline, npm ci/offline + CSS reproducibility, Python/vendor/diff, migrate --check/makemigrations, web/TLS health — OK. Deploy check: только намеренный W004. Docker/cron enabled; wrapper не повторяет успешный backup сегодня.
 - Локальные коммиты: 22ee7b6 (функции/CI/операции), 0acf343 (снимок CA), 24e223a (общий backup-lock). Remote codex/library-operations опубликован; новый CI прошёл.
 - CI: [39117577380](https://github.com/DenBond007/sopds/actions/runs/39117577380), commit 4a335db; CSS/vendor/source/check/migrations и все 203 теста прошли, browser smoke выполнен без skip. Лог приватно .local/logs/m08-ci-39117577380.log.
-- Следующий шаг: проверка физической читалки пользователем и согласованный reboot хоста; M08 завершена. Физическая читалка/reboot — внешние условия. Детали — m08-library-operations.md.
+- M09.1–M09.3 done: комплект TrueNAS SCALE 24.10+ готов локально, без развёртывания на NAS.
+- Комплект: .local/sopds-truenas-kit.tar.gz (236201075 байт) и .sha256; инструкция docs/modernization/truenas.md; параметры infra/truenas/settings.example.json.
+- M09 проверки: 19 адресных тестов и 218/218 общего набора с Chrome; Compose из распакованного архива, SHA256, linux/amd64, portable image IDs и UID проверены.
+- Первый M09 browser failure был из-за отсутствия bundled Chromium; существующий SOPDS_BROWSER_EXECUTABLE=/opt/google/chrome/chrome дал успешный адресный и общий прогон.
+- Подготовлены bootstrap/full YAML, сохраняемые секреты, обнаружение Compose-проекта и backup с проверкой восстановления; изменения локальные, публикации не было.
+- M10.1–M10.2 реализованы: registry-комплект, digest/pull-проверки, workflow с тестами и проверкой приватности. 24 адресных и 223/223 общих теста с Chrome прошли (85.703 с); M10.3 in_progress.
+- GHCR: пользователь явно выбрал приватность; Actions использует GITHUB_TOKEN, будущий NAS — PAT classic read:packages.
+- GitHub auth подтверждена; remote codex/library-operations = c4af37c, master остаётся legacy. Выпуски через push тегов truenas-* без merge в master.
+- Следующий шаг: сохранить проверенные изменения, опубликовать тег truenas-2026.10.18.1, дождаться CI/GHCR и скачать проверенный малый комплект. На NAS ничего не запускать.
