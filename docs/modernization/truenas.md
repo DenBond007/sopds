@@ -25,12 +25,14 @@ YAML записан в совместимом JSON-синтаксисе, кот�
 
 ## Получение комплекта из GitHub
 
-Workflow [Publish private TrueNAS images](https://github.com/DenBond007/sopds/actions/workflows/publish-truenas.yml)
-срабатывает при отправке тега `truenas-*` в `DenBond007/sopds`.
-Сначала проходит полный набор тестов, включая Chromium, затем собираются два образа:
+Workflow [Publish private TrueNAS images](https://github.com/DenBond007/sopds-images/actions/workflows/publish-truenas.yml)
+запускается вручную в отдельном **приватном** репозитории `DenBond007/sopds-images`.
+В поле `source_ref` задайте commit SHA или тег из исходного `DenBond007/sopds`.
+Workflow разрешает его в точный commit, выполняет полный набор тестов этого commit,
+включая Chromium, затем собирает два образа:
 
-- `ghcr.io/denbond007/sopds-private-app:sha-<commit>` — web/scanner/annotations/manage;
-- `ghcr.io/denbond007/sopds-private-caddy:sha-<commit>` — HTTPS.
+- `ghcr.io/denbond007/sopds-nas-app:sha-<commit>` — web/scanner/annotations/manage;
+- `ghcr.io/denbond007/sopds-nas-caddy:sha-<commit>` — HTTPS.
 
 Оба пакета **private**. Workflow проверяет видимость до/после публикации и отказ
 анонимного чтения. До первой загрузки приложения создаётся пустой scratch seed
@@ -39,24 +41,32 @@ Workflow [Publish private TrueNAS images](https://github.com/DenBond007/sopds/ac
 временный `GITHUB_TOKEN` с `packages: write`; отдельный PAT в GitHub Secrets не нужен.
 PostgreSQL берётся из официального публичного образа по закреплённому amd64 digest.
 
-Для следующего выпуска сопровождающий сначала отправляет проверенные изменения,
-затем создаёт и отправляет **новый** тег (не перемещайте существующие теги):
+Для следующего выпуска сопровождающий сначала отправляет проверенные изменения
+в исходный репозиторий, затем создаёт и отправляет **новый** тег и запускает сборку:
 
 ```sh
 git tag truenas-YYYY.MM.DD.N
 git push origin truenas-YYYY.MM.DD.N
+gh workflow run publish-truenas.yml --repo DenBond007/sopds-images -f source_ref=truenas-YYYY.MM.DD.N
 ```
 
-Тег должен указывать на коммит с этим workflow. Ветка `master` пока legacy;
-сливать туда модернизацию ради публикации не требуется. Публикации по каждому
-обычному push и автоматического обновления NAS нет.
+Вместо последней команды можно открыть **sopds-images → Actions → Publish private
+TrueNAS images → Run workflow** и указать тот же тег. Не перемещайте существующие
+теги. Исходный `master` пока legacy; сливать туда модернизацию ради сборки не нужно.
+Публикации по каждому push и автоматического обновления NAS нет.
+
+В `sopds-images` находятся только README и workflow; исходники скачиваются по выбранной
+ревизии из `sopds`. Проверки вызываются через reusable workflow, закреплённый по SHA,
+и используют ту же ревизию, что сборка. После изменения логики публикации синхронизируйте
+`.github/workflows/publish-truenas.yml` с приватным репозиторием. В исходном публичном
+репозитории этот workflow не публикует образы: он ограничен именем `sopds-images`.
 
 В успешном запуске **Actions → Publish private TrueNAS images → Artifacts** скачайте
-`sopds-truenas-ghcr-<tag>`. Распакуйте ZIP артефакта; внутри маленький
+`sopds-truenas-ghcr-<commit>`. Распакуйте ZIP артефакта; внутри маленький
 `sopds-truenas-ghcr.tar.gz` и его `.sha256`. Сохраните их у себя: Actions хранит
-артефакт **90 дней**. Сам комплект доступен читателям публичного репозитория, поэтому
-он содержит только общие шаблоны/скрипты и ссылки на образы, без секретов и локальных
-данных. Видимость самих GHCR-образов остаётся приватной.
+артефакт **90 дней**. Комплект хранится в приватном репозитории сборки и
+содержит только общие шаблоны/скрипты и ссылки на образы, без секретов и локальных
+данных. GHCR-образы также должны оставаться приватными.
 
 Переносить архив образов на NAS не нужно. Нужно один раз скопировать небольшой
 комплект в `package_dir` либо скачать и распаковать его там. Эти файлы остаются
