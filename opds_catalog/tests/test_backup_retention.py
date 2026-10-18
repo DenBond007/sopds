@@ -27,3 +27,12 @@ class BackupRetentionTests(TestCase):
             self.assertTrue(incomplete.exists())
             self.assertTrue(linked.is_symlink())
             self.assertTrue(Path(external).exists())
+
+    def test_manual_and_scheduled_backups_cannot_overlap_and_lock_is_released(self):
+        with TemporaryDirectory() as root:
+            with module.exclusive_backup(root):
+                with self.assertRaisesRegex(RuntimeError, 'Another verified backup'):
+                    with module.exclusive_backup(root):
+                        self.fail('Concurrent backup entered')
+            with module.exclusive_backup(root):
+                pass

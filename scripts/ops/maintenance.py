@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Quiesced Compose backups with mandatory restore verification and safe retention."""
 import argparse
+from contextlib import contextmanager
+import fcntl
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -52,6 +54,20 @@ def prune(root, retain):
         shutil.rmtree(path)
 
 
+
+@contextmanager
+def exclusive_backup(directory):
+    descriptor = os.open(Path(directory)/'.backup.lock', os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError('Another verified backup is running') from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--env-file', required=True, type=Path)
@@ -70,6 +86,11 @@ def main():
     backup_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     if backup_root.stat().st_mode & 0o077:
         parser.error('Backup directory must have private permissions (0700)')
+    with exclusive_backup(backup_root):
+        perform_backup(args, backup_root)
+
+
+def perform_backup(args, backup_root):
     compose = ['docker', 'compose', '--project-name', 'sopds-container',
                '--env-file', str(args.env_file.resolve()),
                '-f', str(ROOT / 'infra/docker/compose.yaml')]
