@@ -46,4 +46,5 @@
 - M11: init/checkpoint и release-readiness в app/Caddy реализованы; один YAML-шаблон и renderer, документирован подтверждённый registry UI для 24.10/25.04+.
 - M11 local done: 236/236 за95.633с с Chrome; first/repeat/credentials/mount/SIGKILL→rollback→retry, TLS/auth/UID/RO и сохранность account/settings/genre/ID/shelf/position/CA. Offline-kit SHA/image/platform/оба YAML проверены; uv/npm/CSS/source/vendor/schema/actionlint OK.
 - CI39146844920: 236 тестов/Chrome, один новый contract-test error: Compose v2 опускает false в JSON; проверка совместимости исправлена, добавлен реальный missing-path отказ. Runtime-код не менялся.
-- Следующий шаг: адресная проверка и повторный полный CI нового source SHA; private publication/anonymous-denial и конечный YAML с digest. NAS deployment запрещён.
+- M11 failure-review: PostgreSQL placeholder нужно отклонять до initdb, иначе исправление YAML оставит старый пароль кластера. Добавлен self-contained shell guard и synthetic PG_VERSION-before/after проверка.
+- Следующий шаг: адресный smoke/контракт и полный CI окончательного YAML; private publication/anonymous-denial и конечный YAML с digest. NAS deployment запрещён.

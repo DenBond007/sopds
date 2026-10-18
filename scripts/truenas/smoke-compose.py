@@ -216,6 +216,13 @@ def main():
         directory.chmod(0o755)
         with stack(args, directory, 'first') as probe:
             init = probe.config['services']['init']
+            postgres = probe.config['services']['db']['environment']
+            saved_password = postgres['POSTGRES_PASSWORD']
+            postgres['POSTGRES_PASSWORD'] = 'CHANGE_ME_POSTGRES_64_RANDOM_HEX'
+            probe.up(succeeds=False)
+            assert probe.compose('run', '--rm', '--no-deps', '-T', '--entrypoint', 'test', 'db', '-e', '/var/lib/postgresql/data/PG_VERSION', check=False).returncode == 1
+            postgres['POSTGRES_PASSWORD'] = saved_password
+            print('Placeholder PostgreSQL credential rejected before cluster creation: OK', flush=True)
             missing = probe.root / 'missing-books'
             mounts = [mount for service in probe.config['services'].values() for mount in service.get('volumes', []) if mount['target'] == '/library']
             for mount in mounts:

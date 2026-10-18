@@ -79,6 +79,21 @@ services:
     platform: linux/amd64
     pull_policy: missing
     user: '999:999'
+    # Refuse template credentials BEFORE PostgreSQL writes a new persistent cluster.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        case "$${POSTGRES_PASSWORD:-}" in
+          CHANGE_ME*|change_me*|REPLACE_*|replace_*|'')
+            echo 'Set postgres_password before starting the database.' >&2
+            exit 1 ;;
+        esac
+        if [ "$${#POSTGRES_PASSWORD}" -lt 32 ]; then
+          echo 'postgres_password must have at least 32 characters.' >&2
+          exit 1
+        fi
+        exec /usr/local/bin/docker-entrypoint.sh postgres
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

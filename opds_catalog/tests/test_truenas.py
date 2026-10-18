@@ -405,6 +405,8 @@ class StandaloneComposeTests(TestCase):
             books = next(m for m in services[name]['volumes'] if m['target'] == '/library')
             self.assertTrue(books['read_only'])
         self.assertEqual(services['caddy']['depends_on']['web']['condition'], 'service_healthy')
+        self.assertIn('exec /usr/local/bin/docker-entrypoint.sh postgres', services['db']['entrypoint'][-1])
+        self.assertIn('POSTGRES_PASSWORD', services['db']['entrypoint'][-1])
         self.assertNotIn('ports', services['db'])
         self.assertNotIn('ports', services['web'])
         self.assertTrue(config['networks']['backend']['internal'])

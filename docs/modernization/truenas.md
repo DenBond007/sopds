@@ -81,7 +81,10 @@ three infrastructure secrets and initial administrator credentials. Generate
 **three independent random hex secrets of at least 64 characters** in a password
 manager for Django, PostgreSQL administrator and the application database role.
 Use a strong initial admin password of at least 16 characters and a valid email.
-The initializer rejects credential placeholders and weak admin passwords.
+PostgreSQL rejects its password placeholder before writing a new cluster; the
+initializer rejects other credential placeholders and weak admin passwords.
+After any existing cluster has been created, retain its original password: editing
+YAML does not rotate it.
 
 Keep YAML strings quoted. Compose processes `$` even inside single quotes: use
 `$$` for each literal dollar in a password. Hex secrets avoid this issue. Keep a

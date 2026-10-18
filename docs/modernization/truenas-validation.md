@@ -21,6 +21,8 @@ inside the disposable smoke PostgreSQL server, with Chromium explicitly enabled.
 
 | Local check | Result |
 |---|---|
+| PostgreSQL placeholder before first initdb | Rejected before PG_VERSION exists; correct credential can initialize normally |
+| Missing host library path | Rejected without creating a host directory |
 | Single-YAML parse, first installation and dependency failure | Passed; invalid admin credentials keep web/scanner/annotations/Caddy stopped |
 | Repeat initialization | Passed; passwords, email, custom settings/genres, book IDs, shelves, positions and TLS CA preserved |
 | Static mount permission failure and retry | Passed; readiness cleared, runtime guard rejects startup, corrected retry preserves data |

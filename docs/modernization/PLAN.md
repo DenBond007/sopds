@@ -409,3 +409,8 @@ M11 CI39146844920: 236 тестов/Chromium выполнены; один error 
 smoke дополнен реальным отсутствующим host path (отказ, без mkdir). Runtime не менялся.
 Первый private dispatch39146906128 отклонил short SHA до tests/publish; использовать full40 SHA.
 Следующий source CI/private run должны пройти полностью до фиксации итогового YAML.
+
+M11 дополнительный отказ: PG password placeholder должен отклоняться до записи
+нового PGDATA; иначе исправленный YAML не совпадёт с уже сохранённым паролем.
+В YAML добавлен non-root guard перед штатным entrypoint (без host script и без
+сброса паролей); synthetic smoke проверяет отсутствие PG_VERSION при отказе.
