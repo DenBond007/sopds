@@ -1,43 +1,811 @@
-# Текущее состояние
+# M00: исходное состояние SOPDS (23.09.2026)
 
-- Задача: M10 — приватные GHCR-образы и небольшой registry-комплект; развёртывание на NAS явно исключено.
-- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; опубликована в DenBond007/sopds по явному согласию пользователя; CI для 4a335db success.
-- M08.1–M08.5 done; M08.6 done: CI 39117577380 для исправленного 4a335db success, 203/203 за 82.696 с с Chromium. Повторный 39117210902 выявил race /proc в тесте; точный catch ESRCH/ENOENT проверен 20/20 адресно. M06.3 также закрыта.
-- Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
-- Реализованы: корректные ссылки и stateless Basic; совместные web/OPDS фильтры; отдельные личные списки; FB2 reader с серверной позицией; staff-only operations.
-- 0007 добавляет ReadingState/ServiceStatus; constraints уникальности/позиции. Старые модели не меняются.
-- Проверки: 24 адресных links/auth, 39 features/SQL/migrations, 22 browser/scanner/retention; OK.
-- Полный набор: 200/200 за 85.315 с, включая настоящий Chromium desktop/mobile, CSRF и scroll save/restore. Ещё 3 новых теста schedule/общего backup-lock прошли отдельно; адресный набор обслуживания 4/4.
-- Первый общий прогон нашёл guard для Feed.get_object(None); исправлен, 7 адресных и повторный полный набор прошли.
-- Benchmark: 100000 синтетических книг, 7 повторов; OFFSET median 14.576 мс, PK-range 0.626 мс; substring 14.889 мс; 300 duplicate rows 301→4 SQL. Данные откатились, отдельная БД удалена.
-- Сопровождение: npm-lock/Dart Sass; Gulp/Bower в legacy; fingerprint vendored-компонентов; test-only CI с браузером, синтаксисом, CSS и миграциями; monthly Dependabot uv/npm/Actions.
-- Docker: проверенный app image теперь sopds-app:local; db/web/scanner/annotations/caddy работают на 192.168.88.44:9444, библиотека только .local/container-library read-only, отдельные тома/БД. Production не использовался.
-- HTTPS legacy smoke: CA/IP без bypass, 401/200, поиск, точные download, large/parallel download, preview, INPX worker, CSRF/admin/static — OK.
-- HTTPS M08 smoke: обычный читатель, Basic без sessions, web login/CSRF, списки/позиция, reader CSP, staff access — OK.
-- Пользователь `sopds_reader` обычный, credentials только .local/m08/reader.json (0600); не выводить. CA для читалки .local/m07/root.crt.
-- После долгого простоя Caddy столкнулся с race storage cleanup/renewal expired leaf; штатный restart выпустил новый leaf прежним CA. TLS healthcheck healthy; CA/ключи/тома не удалялись.
-- Backup до 0007: .local/backups/sopds-20261018T084959Z-2a9aa62e; после: sopds-20261018T090156Z-21becc14. 0700/0600, каждый полностью восстановлен в новой БД с совпадением всех таблиц; временные БД удалены.
-- Migration integrity: все старые прикладные строки совпали; +2 content types/+8 permissions/+1 migration ожидаемы. 8 истёкших sessions удалены maintenance.
-- Диагностика образа healthy=true, очередь ready=1, ошибок нет, свободно около 24 ГБ. Разделённая backup-status сводка доступна app без доступа к закрытым копиям.
-- Расписание: существующий user cron, проверка каждые 15 минут, один полный backup после 03:30 Europe/Moscow, retry не чаще часа, flock, retention 7; чужие jobs сохранены. Docker/cron active, Linger=no, root/sudo не использовались.
-- Нативный probe: transient user units фактически not-found и 8443 закрыт; его файлы/данные сохранены. Для физической читалки использовать Docker 9444.
-- Внешнее: ответ о названии/версии читалки запрошен; её CA/search/download и полный reboot хоста не проверены. HSTS пока выключен. ARM64 не проверен.
-- Нативная dev-БД не мигрировалась. Общие тесты создавали и удаляли только test_sopds_m08; benchmark — только sopds_bench_m08_20261018.
-- Посторонний ._sopds-codex-start.zip не трогать. Локальные env, credentials, backup и книги не коммитить.
-- Публикация разрешена ответом пользователя «Да, опубликовать эту ветку»: codex/library-operations в DenBond007/sopds; .local, книги, backup и секреты исключены.
-- Backup завершает также Caddy на время снимка CA; реальные app/Caddy image IDs и uv.lock hash входят в manifest. Финальная версия с общим lock полностью проверена реальным backup/restore.
-- Финальный snapshot: sopds-20261018T091240Z-73c49c23; код backup 24e223a, app/Caddy image IDs и uv.lock hash записаны, 24/24 таблицы восстановлены и совпали.
-- Финальные проверки: uv frozen/offline, npm ci/offline + CSS reproducibility, Python/vendor/diff, migrate --check/makemigrations, web/TLS health — OK. Deploy check: только намеренный W004. Docker/cron enabled; wrapper не повторяет успешный backup сегодня.
-- Локальные коммиты: 22ee7b6 (функции/CI/операции), 0acf343 (снимок CA), 24e223a (общий backup-lock). Remote codex/library-operations опубликован; новый CI прошёл.
-- CI: [39117577380](https://github.com/DenBond007/sopds/actions/runs/39117577380), commit 4a335db; CSS/vendor/source/check/migrations и все 203 теста прошли, browser smoke выполнен без skip. Лог приватно .local/logs/m08-ci-39117577380.log.
-- M09.1–M09.3 done: комплект TrueNAS SCALE 24.10+ готов локально, без развёртывания на NAS.
-- Комплект: .local/sopds-truenas-kit.tar.gz (236201075 байт) и .sha256; инструкция docs/modernization/truenas.md; параметры infra/truenas/settings.example.json.
-- M09 проверки: 19 адресных тестов и 218/218 общего набора с Chrome; Compose из распакованного архива, SHA256, linux/amd64, portable image IDs и UID проверены.
-- Первый M09 browser failure был из-за отсутствия bundled Chromium; существующий SOPDS_BROWSER_EXECUTABLE=/opt/google/chrome/chrome дал успешный адресный и общий прогон.
-- Подготовлены bootstrap/full YAML, сохраняемые секреты, обнаружение Compose-проекта и backup с проверкой восстановления; изменения локальные, публикации не было.
-- M10.1–M10.2 реализованы: registry-комплект, digest/pull-проверки, workflow с тестами и проверкой приватности. 24 адресных и 223/223 общих теста с Chrome прошли (85.703 с); M10.3 in_progress.
-- GHCR: пользователь явно выбрал приватность; Actions использует GITHUB_TOKEN, будущий NAS — PAT classic read:packages.
-- GitHub auth подтверждена; remote codex/library-operations = c4af37c, master остаётся legacy. Выпуски через push тегов truenas-* без merge в master.
-- Первый GHCR run 39129841214: CI прошёл; после push обнаружена публичная доступность новых пакетов вопреки выбранному private. Комплект не опубликован. Требуется удалить только эти две собственные версии и проверять private на пустом seed до загрузки runtime.
-- Исправление: cleanup 39143277809 success; удалены только собственные пакеты с единственной версией bd486b2. Anonymous повторно403. Новые имена sopds-private-app/caddy; private проверяется на пустом scratch seed до runtime, source-label привязки к public repo не используется. 25 адресных тестов прошли.
-- Следующий шаг: опубликовать truenas-2026.10.18.2 и проверить новый защищённый процесс, скачать комплект только после private/anonymous/pull checks. На NAS ничего не запускать.
+Актуализация M06.9 (25.09.2026): после проверки `.local/dev.env` на локальное
+dev-назначение и отсутствия `test_sopds_m06_integrity_20260925` выполнена
+`DB_NAME=sopds_m06_integrity_20260925 .venv/bin/python manage.py test --noinput`:
+171/171, exit 0, test-БД удалена. `manage.py check` и
+`manage.py makemigrations --check --dry-run` — exit 0. Применение/откат 0006
+проверены только на восстановленном искусственном снимке в новой одноразовой
+БД. Команды, первоначальные сбои и ограничения — в [m06-integrity.md](m06-integrity.md).
+
+Обновление по решению пользователя: legacy-запуск и исходные тесты не выполняются;
+результат тестов до модернизации неизвестен. M00B продолжает работу сразу на
+Python 3.13 / Django 5.2. В записи ниже Django 2.2 означает только версию из
+`Pipfile.lock`, а не установленный Django: проверка Python 3.13 показала отсутствие
+пакета `django`.
+
+## Git и окружение
+
+- Исходный commit: `ce0ba45003cbff02881dc3cd822c22061210e73e`, ветка `modernization/sopds`.
+- Remotes: `origin=https://github.com/DenBond007/sopds.git`, `upstream=https://github.com/ichbinkirgiz/sopds.git` (fetch/push).
+- До работ `git status --short --branch` показывал только чужой неотслеживаемый `._sopds-codex-start.zip`; файл не изменялся и не добавлялся в индекс.
+- Ubuntu 24.04.5 LTS, x86_64; системный Python 3.12.3, отдельный целевой Python 3.13.15, uv 0.12.18. `psql` и `pg_isready` 16.15; сервер dev-БД 17.11.
+- В `Pipfile` и `Pipfile.lock` указан Python 3.7. Lock фиксирует Django 2.2 и 15 других пакетов, в том числе Pillow 6.0.0, lxml 4.3.3, APScheduler 3.6.0 и python-telegram-bot 11.1.0. `requirements.txt` расходится с lock: Django `<2.2`, `python-telegram-bot==13.5`, `tzlocal==2.1`, остальные диапазоны открыты. Встроенная `constance` находится в репозитории. Для PostgreSQL необходим psycopg2, которого нет ни в lock, ни в requirements. Обычный `uv sync` здесь не является способом запуска старого checkout.
+- Установлены `build-essential`, `libpq-dev` 16.15, `zlib1g-dev`, `libffi-dev`, `libssl-dev`, `postgresql-client` 16. Не установлены `libxml2-dev`, `libxslt1-dev`, `libjpeg-dev`; они могут понадобиться, если старые lxml/Pillow придётся собирать из исходников. Системные пакеты устанавливает человек.
+
+## Проверенная локальная подготовка
+
+- `python3 scripts/dev/prepare-local.py` завершился с кодом 0: существующие локальные файлы оставлены без изменений. Их содержимое не выводилось; `.local/postgres.env` не читался.
+- `SOPDS_DEV_LIBRARY` в `.local/dev.env` — подсказка для будущего dev-запуска. Старый код читает `config.SOPDS_ROOT_LIB` из БД Constance; значение по умолчанию `books/`. Для сканера его нужно явно установить в `/home/denbond/Projects/sopds/.local/library`. Папка существует, не является ссылкой, на верхнем уровне пуста. Шесть файлов данных исходных тестов отслеживаются Git в `opds_catalog/tests/data/`; их не переносили в рабочую библиотеку.
+- После проверки `DB_NAME=sopds_dev`, `DB_USER=sopds_dev`, `DB_HOST=127.0.0.1`, `DB_PORT=5433` read-only `pg_isready` сообщил `accepting connections`. `psql` подтвердил `current_database=sopds_dev`, `current_user=sopds_dev`, PostgreSQL 17.11, `CREATEDB=true`, 0 таблиц в `public` и отсутствие `test_sopds_dev`. Docker socket не использовался; контейнер не запускался агентом.
+- Наличие копии прежней рабочей БД не подтверждено. Миграция её данных не проверена.
+
+## Исходные тесты и блокер
+
+Исходная команда проекта по `.travis.yml`: `python manage.py test`; в данном checkout она должна выполняться из отдельного окружения Python 3.7 с загруженным `.local/dev.env`, через отдельную dev-БД. Исходные тесты **не запускались**: совместимый интерпретатор отсутствует, а ставить старые зависимости в Python 3.13 нельзя. Следовательно, числа пройденных/упавших тестов нет; этот блокер не является дефектом приложения.
+
+Проверки интерпретатора: `uv python list --only-installed` нашёл только 3.12 и 3.13; `python3.7`, `pyenv`, `pipenv` и `.venv-legacy` отсутствуют. Одна попытка `UV_PYTHON_INSTALL_DIR="$PWD/.local/python" UV_CACHE_DIR="$PWD/.local/uv-cache" uv python install 3.7` завершилась с кодом 2: `No download found for request: cpython-3.7-linux-x86_64-gnu`. Повторять ту же команду без новой диагностики бессмысленно.
+
+Прежний путь продолжения через Python 3.7 ниже сохранён только для истории M00 и не
+является действующим следующим шагом.
+
+## Исторические команды legacy-продолжения (не выполнять в текущем плане)
+
+Эти команды **не выполнялись** и не подтверждают готовый запуск. Они намеренно проверяют назначение перед любым обращением к БД. Запускать их только из корня этого checkout после создания `.venv-legacy` на Python 3.7 и установки проверенного набора старых зависимостей.
+
+```bash
+set -e
+python3 scripts/dev/prepare-local.py
+set -a
+. .local/dev.env
+set +a
+test "$DB_NAME" = sopds_dev && test "$DB_USER" = sopds_dev && \
+  test "$DB_HOST" = 127.0.0.1 && test "$DB_PORT" = 5433
+test "$(realpath .local/library)" = "$PWD/.local/library" && test ! -L .local/library
+test -x .venv-legacy/bin/python
+PGPASSWORD="$DB_PASS" psql -X -h "$DB_HOST" -p "$DB_PORT" \
+  -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+  -Atqc 'select current_database(), current_user'
+.venv-legacy/bin/python manage.py check
+.venv-legacy/bin/python manage.py migrate --noinput
+.venv-legacy/bin/python manage.py sopds_util setconf SOPDS_ROOT_LIB "$PWD/.local/library"
+.venv-legacy/bin/python manage.py test --noinput
+```
+
+Для безопасного ручного dev-запуска после успешных проверок: `.venv-legacy/bin/python manage.py runserver 127.0.0.1:8000 --noreload`. Перед **любым** запуском сканера ещё раз проверить `sopds_util getconf SOPDS_ROOT_LIB`: он должен указывать строго на `.local/library`; не запускать `sopds_scanner` с настройкой по умолчанию или на рабочей библиотеке. Логи проверок хранить в `.local/logs/`, фиксируя код выхода и относящиеся к нему ошибки в этом файле.
+
+## M00B: первый запуск на Python 3.13 / Django 5.2
+
+`pyproject.toml` и `uv.lock` задают отдельное окружение Python 3.13.15. Версии из lock:
+Django 5.2.17, APScheduler 3.11.3, django-picklefield 3.4.0, lxml 5.4.0,
+Pillow 11.3.0, psycopg2-binary 2.9.13; транзитивные версии также зафиксированы.
+Версия Django 5.2.17 выбрана в пределах LTS; 5.2.18 на 23.09.2026 ещё не выпущена.
+`python-telegram-bot` пока не входит в основное окружение: старый код команды использует
+API ветки 13, а её совместимость с Python 3.13 не проверена. Команду телебота не запускали;
+её адаптация остаётся за пределами M00B. Старые `requirements.txt` и `Pipfile.lock`
+не применялись к Python 3.13; их дальнейший статус решается в M02.
+
+Команды и результат:
+
+| Команда | Exit code | Результат |
+|---|---:|---|
+| `UV_CACHE_DIR="$PWD/.local/uv-cache" uv lock --python python3.13` | 0 | Разрешено 11 записей lock, включая проект. |
+| `UV_CACHE_DIR="$PWD/.local/uv-cache" uv sync --python python3.13 --frozen` | 0 | Создана `.venv`, установлено 9 пакетов. |
+| `.venv/bin/python manage.py check` | 0 | После адаптации Django API; 0 замечаний после установки `DEFAULT_AUTO_FIELD=AutoField`. |
+| `.venv/bin/python manage.py showmigrations --plan` | 0 | Исторические `database.0001/0002` и `opds_catalog.0001` загружены. |
+| `.venv/bin/python manage.py makemigrations --check --dry-run` | 0 | `No changes detected`. |
+| `.venv/bin/python manage.py migrate --noinput` на новой `sopds_m00b_test` | 0 | Применена 21 миграция. |
+| Повторный `migrate --noinput` и проверка пробной записи Constance | 0 | `M00B_PROBE` сохранился с ID 1; SQL-тип `constance_config.id` — `integer`. |
+| `.venv/bin/python manage.py test --noinput` (первый прогон) | 1 | 40 тестов; 20 ошибок из-за удалённых `assertEquals`/`assertNotEquals`, 4 падения по языку книги. |
+| `.venv/bin/python manage.py test --noinput` (после замены только имён assert API) | 1 | 40 тестов; 4 падения, 0 ошибок загрузки. |
+
+Для каждой команды Django загружался `.local/dev.env` без вывода содержимого и
+проверялись `DB_NAME=sopds_dev`, `DB_USER=sopds_dev`, `DB_HOST=127.0.0.1`,
+`DB_PORT=5433`. Для миграций затем явно задавался `DB_NAME=sopds_m00b_test`:
+БД была создана только после подтверждения отсутствия. Django-тесты создавали и
+удаляли `test_sopds_m00b_test`; существующая `sopds_dev` не очищалась.
+
+Оставшиеся четыре падения: `test_processfile_epub` ожидал `book.lang == 'ru'`,
+получил `Русский`; три варианта FB2 ожидали `en`, получили `Английский`. В текущем
+`opds_catalog/sopdscan.py` словарь языка преобразует код в полное имя. Без исходных
+тестов невозможно классифицировать эти падения как прежние или внесённые при переносе.
+Ожидаемые значения и код сканера в M00B не менялись. Полные логи хранятся только в
+`.local/logs/m00b-*.log`.
+
+После M00B воспроизводимые команды окружения: `uv sync --python python3.13 --frozen`,
+затем `source .local/dev.env` с проверкой имени/адреса/порта БД и `.venv/bin/python
+manage.py check`. Для тестов использовать только одноразовую test-БД через
+`DB_NAME=sopds_m00b_test .venv/bin/python manage.py test --noinput`; запускать после
+проверки, что `test_sopds_m00b_test` не существует. Миграция предоставленной копии
+прежней рабочей БД **не проверена**.
+
+## M01.1: защитные тесты данных (в работе M01)
+
+Новые тесты используют только Django `test_sopds_m00b_test` и копию тестовой книги во
+временной папке. До исправления `manage.py test
+opds_catalog.tests.test_scan_safety --noinput` завершился с кодом 1: из 2 тестов
+1 упал, потому что отсутствующий корень не вызывал ошибку и сканер дошёл до
+физического удаления. После раннего `os.scandir` и `os.walk(..., onerror=...)`
+та же команда завершилась с кодом 0: 2/2 теста прошли; повторный scan сохранил
+ID книги, ID каталога и связь с полкой. Полные логи: `.local/logs/m01-safety-before.log`
+и `.local/logs/m01-safety-after.log`. Реальная миграция БД остаётся **не проверена**.
+
+## M01.2: подтверждённые риски
+
+- При успешном обходе сканер игнорировал `SOPDS_DELETE_LOGICAL` и физически удалял
+  отсутствующие книги, включая связанные полки. Два новых теста воспроизвели потерю
+  (`4 теста, 2 ошибки`, exit 1); после восстановления режима логического удаления и
+  сохранения книг с полками даже при физическом режиме `4/4`, exit 0. Возврат файла
+  восстановил `avail=2` с тем же ID и полкой. Логи `m01-delete-before.log`,
+  `m01-delete-after.log`, `m01-delete-restore.log` в `.local/logs/`.
+- В OPDS и web префиксы из маршрута/GET подставляются в шесть raw SQL-запросов.
+  Тест `test_sql_safety` с `A'B` до исправления дал `ProgrammingError` из PostgreSQL
+  (`2 теста, 1 ошибка`, exit 1; `.local/logs/m01-sql-before.log`). Обычный префикс
+  проходит. Это подтверждает отсутствие параметризации; возможность иных SQL-атак
+  не тестировалась на данных вне одноразовой test-БД.
+- `opds_catalog/dl.py` вызывает `Popen(..., shell=True)` в двух путях конвертации,
+  собирая командную строку из имени конвертера и файла. Настройки содержат публичный
+  резервный `SECRET_KEY`, `DEBUG=True`, `ALLOWED_HOSTS=['*']`. Эти факты установлены
+  по коду; команды конвертера и production-настройки не запускались.
+
+M01.3a: шесть OPDS/web запросов переведены на параметры Django `raw(sql, params)`
+через общий helper с фиксированными именами моделей/полей. После исправления
+`test_sql_safety` прошёл (4/4, exit 0): обычный префикс, кавычка во всех трёх OPDS
+группах и три реальные web-страницы. Для последней проверки семь шаблонов переведены
+с удалённого `{% load staticfiles %}` на `{% load static %}`. Логи:
+`.local/logs/m01-sql-before.log`, `m01-sql-after.log`, `m01-sql-all.log`,
+`m01-sql-web-2.log`.
+
+M01.3b: до исправления буквальное имя тестового конвертера с `$(...)` расширялось
+оболочкой (`1 тест, 1 падение`, exit 1). Оба пути `Popen` переведены на список
+аргументов без shell. После исправления тест прямой конвертации и тест HTTP-пути
+прошли (`2/2`, exit 0), работая только с временными тестовыми файлами. Логи:
+`.local/logs/m01-converter-before.log`, `m01-converter-after.log`,
+`m01-converter-both.log`.
+
+M01.3c: `prepare-local.py` дополняет существующий `.local/dev.env` только
+отсутствующими настройками приложения, включая случайный `SOPDS_SECRET_KEY`, без
+вывода значения и без изменения учётных данных БД. Django больше не содержит
+публичный резервный ключ; без ключа `manage.py check` завершился с кодом 1,
+с локальным ключом — с кодом 0. DEBUG по умолчанию выключен, hosts по умолчанию
+ограничены localhost. Два subprocess-теста настроек прошли (exit 0). Логи:
+`.local/logs/m01-settings-check.log`, `m01-settings-missing-secret.log`,
+`m01-settings-tests.log`. Production-настройки и секреты не проверялись.
+
+M01.3d: повторный `python3 scripts/dev/prepare-local.py` завершился с кодом 0;
+SHA-256 `.local/dev.env` до и после совпал (содержимое не выводилось). Перед
+общим прогоном `test_sopds_m00b_test` отсутствовала. Команда
+`DB_NAME=sopds_m00b_test .venv/bin/python manage.py test --noinput` выполнила
+53 теста за 5.961 с, exit 1: те же 4 падения по `book.lang` (`Русский`/`ru`,
+`Английский`/`en`), 0 ошибок, Django check без замечаний. После прогона
+`test_sopds_m00b_test` отсутствует. Полный лог: `.local/logs/m01-full.log`.
+Тесты сохранности ID и полок, отказа при недоступном корне и сбое обхода,
+SQL-параметризации, конвертера и настроек прошли в общем наборе. Поскольку
+legacy-тесты не запускались, исходный статус четырёх падений остаётся неизвестным.
+Миграция копии прежней рабочей БД также не проверена.
+
+## M02.1: источники зависимостей и ссылки
+
+Для Python 3.13 активны `pyproject.toml` и `uv.lock`: Django 5.2.17,
+APScheduler 3.11, django-picklefield 3.3–3.4, lxml 5, Pillow 11 и
+psycopg2-binary 2.9. Старые `requirements.txt`, `Pipfile` и `Pipfile.lock`
+расходятся с ними: требования Python 3.7/Django до 2.2, старые версии библиотек,
+Telegram в обоих списках и отсутствие драйвера PostgreSQL. Lock Pipenv содержит
+16 пакетов; это историческая запись, не проверенное окружение. Прямые ссылки на
+`requirements.txt` остаются в README, `raspberry.txt` и `.travis.yml`.
+Команда `sopds_telebot` импортирует `telegram`, но пакет исключён из основного
+окружения M00B до отдельной адаптации. Пакеты в M02.1 не устанавливались.
+Следующее изменение — обновить основную инструкцию README под uv и отдельную
+dev-БД; затем разобраться с raspberry.txt, Travis и старыми manifests, чтобы не
+оставить конкурирующих активных способов установки.
+
+M02.2: исходный README перенесён без изменений в `docs/legacy/README.md`.
+Корневой README теперь описывает Python 3.13, uv, отдельную dev-БД PostgreSQL 17,
+проверку её имени/адреса и настройку `SOPDS_ROOT_LIB` на `.local/library` до
+сканера. Проверка `bash -n` блока команд и ссылок прошла; в основной инструкции
+нет установки `requirements.txt` и команды `sopds_util clear`. Команды из README
+заново не выполнялись; успешные команды среды и ограничения указаны выше.
+
+M02.3: `.travis.yml`, `raspberry.txt`, `requirements.txt`, `Pipfile` и
+`Pipfile.lock` перенесены без изменения байтов в `docs/legacy/`; корневых копий
+нет. В действующих файлах больше нет команд установки старого стека.
+`UV_CACHE_DIR="$PWD/.local/uv-cache" uv lock --check --offline` завершился с
+кодом 0 (11 пакетов). Старый Travis job отключён переносом конфигурации;
+автоматический CI для Python 3.13/PostgreSQL 17 пока не настроен. Исторические
+материалы не являются инструкцией к запуску.
+
+M02.4: с загруженным `.local/dev.env` и `DB_NAME=sopds_m00b_test` команды
+`manage.py check`, `makemigrations --check --dry-run` и `showmigrations --plan`
+завершились с кодом 0: замечаний нет, изменений схемы нет, исторические миграции
+Constance и каталога отмечены применёнными. Это проверка одноразовой БД, не
+миграция копии прежней рабочей БД. `manage.py help sopds_telebot` завершился с
+кодом 1 (`ModuleNotFoundError: No module named 'telegram'`); бот не запускался.
+Старый Redis backend содержит импорт удалённого `django.utils.six`, но backend
+неактивен и Redis не входит в целевой стек. Логи: `.local/logs/m02-check.log`,
+`m02-migrations-check.log`, `m02-migrations-plan.log`, `m02-telebot-help.log`.
+
+M02.5: [PyPI python-telegram-bot 22.8](https://pypi.org/project/python-telegram-bot/22.8/)
+указывает Python >=3.10 и поддержку Python 3.13. [Официальный переходный
+документ v20](https://github.com/python-telegram-bot/python-telegram-bot/wiki/Transition-guide-to-Version-20.0)
+описывает переход на asyncio, `Application` и `filters`: старые `Updater`,
+`Filters` и синхронные callback нельзя оставить как есть. [Документация Django
+5.2](https://docs.djangoproject.com/en/5.2/topics/async/) требует выносить
+синхронный ORM из async-контекста через `sync_to_async`. В текущем боте шесть
+callback и два декоратора, несколько вызовов Bot API и синхронный доступ к ORM;
+следовательно, нужна адаптация всей команды и адресные тесты с подменой Bot API.
+Живой токен и Telegram-сеть для тестирования не используются. Библиотека будет
+добавлена в основной стек, как и в исторических requirements, чтобы команда
+загружалась при обычном запуске Django.
+
+M02.6a: python-telegram-bot 22.8 добавлен в `pyproject.toml`, `uv lock` разрешил
+19 пакетов, `uv sync --python python3.13 --frozen` установил 8 новых пакетов
+только в `.venv` (обе команды exit 0). `uv lock --check --offline`, импорт с
+версией 22.8 и Django check прошли. `manage.py help sopds_telebot` теперь
+завершается с кодом 1 на `ImportError: cannot import name 'Filters'` — ожидаемый
+разрыв API v13, подзадача M02.6b. Бот не запускался. Логи:
+`.local/logs/m02-telegram-lock.log`, `m02-telegram-sync.log`,
+`m02-telegram-help-after-dep.log`, `m02-telegram-check.log`.
+
+M02.6b: команда переведена на `ApplicationBuilder`, `filters` и async callbacks;
+синхронные обращения к Constance/ORM и подготовка файла выполняются через
+`sync_to_async`, кеш поиска содержит вычисленные списки, файл закрывается после
+отправки. `manage.py help sopds_telebot` прошёл без токена и сети. Четыре
+адресных теста на одноразовой БД и временном файле прошли (exit 0): поиск,
+сохранение ID в кнопке загрузки, закрытие файла и проверка доступа. Первый
+прогон тестов выявил несовместимость `close_old_connections` с транзакцией
+`TestCase`; изолированные Telegram-тесты переведены на `TransactionTestCase`
+и прошли повторно. Общий набор: 57 тестов, exit 1, 4 прежних падения по
+`Book.lang`, 0 ошибок, замечаний Django нет. После тестов test-БД отсутствует.
+Живой Telegram-бот и доставка сообщений по сети не проверялись. Логи:
+`.local/logs/m02-telegram-help-ported.log`, `m02-telegram-tests-final.log`,
+`m02-telegram-full.log`.
+
+M02.7: четыре падения касались двух ожиданий теста сканера (`en`/`ru`).
+Неизменённый код `opdsScanner` переводит эти коды в `Английский`/`Русский`
+встроенным словарём при отсутствии `Languages.txt`, а web-шаблон отображает
+сохранённый `Book.lang`. Ожидания уточнены для фактической отображаемой
+семантики; дополнительный тест проверяет пользовательскую замену имени через
+временный `Languages.txt` и копию искусственной книги. Целевой набор
+`opds_catalog.tests.test_scan`: 8/8, exit 0; лог `.local/logs/m02-language-tests.log`.
+Это не доказывает, что четыре теста проходили в старом окружении: исходный запуск
+пропущен по решению пользователя.
+
+`git blame` относит преобразование языка в `sopdscan.py` к коммиту
+`3131f60e` от 2023-05-20; это не изменение модернизации. Результат исходных
+legacy-тестов всё равно неизвестен, поскольку они не запускались.
+
+M02.8: общий `DB_NAME=sopds_m00b_test .venv/bin/python manage.py test --noinput`
+выполнил 58 тестов за 6.175 с, exit 0, замечаний Django нет.
+`makemigrations --check --dry-run`, повторный `migrate --noinput` и
+`showmigrations --plan` завершились с кодом 0: изменений моделей и ожидающих
+миграций нет. В отдельной `sopds_m00b_test` запись `M00B_PROBE` осталась одна
+до и после повторной миграции, тип `constance_config.id` — `integer`; значение
+не выводилось. Одноразовая `test_sopds_m00b_test` после тестов отсутствует.
+Логи: `.local/logs/m02-full.log`, `m02-final-makemigrations.log`,
+`m02-final-migrate.log`, `m02-final-plan.log`. Копия прежней рабочей БД не
+предоставлена, поэтому миграция её данных не проверена. Живой Telegram-бот и
+автоматический CI для нового стека также не проверены.
+
+## M03.1: конкурирующие запуски
+
+`Command.scan()` использовал только `scan_is_active` экземпляра, затем длинную
+транзакцию сканирования и обновление счётчиков вне неё. Две разные команды с
+отдельными соединениями одновременно вошли в подменённый scan на временном
+корне: тест ожидал 1 вход, получил 2 (exit 1). Первый прогон оставил соединения
+потоков открытыми и Django не смог удалить `test_sopds_m00b_test`; после
+проверки нуля активных сессий была удалена только эта одноразовая БД. В тест
+добавлено закрытие соединений потоков; повтор сохранил единственное ожидаемое
+падение `2 != 1`, teardown завершился. Логи: `.local/logs/m03-concurrency-before.log`,
+`m03-concurrency-before-2.log`. Рабочая библиотека и dev-БД не сканировались.
+Блокировка должна охватывать scan и обновление счётчиков, сохраняя возможность
+разделить длинную транзакцию позже; выбран session advisory lock PostgreSQL.
+
+M03.2: [PostgreSQL 17](https://www.postgresql.org/docs/17/explicit-locking.html#ADVISORY-LOCKS)
+удерживает session advisory lock до явного освобождения или завершения сессии,
+в том числе после rollback. `Command.scan()` теперь получает lock до обхода,
+удерживает его при обновлении счётчиков, пропускает второй запуск без ожидания
+и освобождает lock вместе со сбросом `scan_is_active` в `finally`.
+Первый адресный прогон обнаружил, что `close_old_connections()` закрывает
+соединение внешней транзакции `TestCase`; заменено на закрытие только
+неисправного соединения. Повторный прогон: 7/7 тестов сохранности и конкуренции,
+exit 0. Общий набор: 60/60, exit 0, без замечаний Django. После него одноразовая
+test-БД отсутствует. Логи: `.local/logs/m03-lock-tests-1.log`,
+`m03-lock-tests-2.log`, `m03-lock-tests-3.log`, `m03-lock-full.log`.
+
+M03.3: на копии отслеживаемой тестовой FB2 в `TemporaryDirectory` заменён
+заголовок на строку той же байтовой длины и увеличен mtime. Повторный scan
+сохранил прежний заголовок (`1 тест, 1 падение`, exit 1), хотя ID и полка
+должны оставаться прежними. Лог: `.local/logs/m03-change-before.log`.
+`Book` хранит filesize, но не время изменения; `findbook` при совпадении
+имени/пути всегда пропускает разбор. Для обычного файла выбран nullable
+`source_mtime_ns` + существующий filesize. При изменении метаданные, авторы,
+жанры и серии обновляются в прежней строке только после успешного разбора;
+ID, полка и registerdate сохраняются. Архивы/INPX требуют отдельного решения,
+поскольку сейчас их пропуск основан только на размере каталога.
+
+M03.4a: `opds_catalog.0002_book_source_mtime_ns` добавляет только nullable
+BigIntegerField к `Book`; историческую `0001_initial` не меняли. Тест через
+`MigrationExecutor` создал книгу и полку на старой схеме, применил 0002 и
+подтвердил прежние ID/связь и `source_mtime_ns=NULL` (1/1, exit 0).
+`makemigrations --check --dry-run` завершился с кодом 0, изменений сверх 0002
+нет. Логи: `.local/logs/m03-mtime-makemigrations.log`,
+`m03-mtime-migration-test.log`, `m03-mtime-schema-check.log`. Реальная прежняя
+БД не предоставлена, поэтому её миграция не проверена.
+
+M03.4b: обычный файл сравнивается по размеру и `st_mtime_ns`; при изменении
+книга после разбора обновляется по прежнему ID вместе с авторами, жанрами и
+сериями. Запись метаданных и связей атомарна (savepoint внутри транзакции
+команды): ошибка записи откатывает её без потери прежней книги и полки.
+Тест на временной копии FB2
+изменил заголовок, автора и жанр при том же размере; ID, registerdate и полка
+сохранились. Отдельно проверены повреждённая замена и искусственная ошибка
+записи жанра; старая запись и связи сохранились. Адресные 3/3 теста, exit 0;
+общий набор 64/64, exit 0, замечаний Django нет. После тестов одноразовая
+`test_sopds_m00b_test` отсутствует. Логи: `.local/logs/m03-change-targeted-2.log`,
+`m03-change-general.log`. Архивы/INPX не охвачены этим изменением. Копии
+прежней рабочей БД нет.
+
+M03.5: на временных ZIP и INPX с искусственными книгами заменён заголовок при
+прежнем размере архива. Повторный scan сохранил старые заголовки в обоих
+случаях: 2 теста, 2 ожидаемых падения, exit 1; одноразовая test-БД удалена.
+В обоих внешних проверках пропуска сравнивается только `Catalog.cat_size`;
+для INPX дополнительно есть пропуск вложенного INP по размеру и callback,
+который не обновляет уже существующую книгу. Лог:
+`.local/logs/m03-archive-before.log`.
+
+M03.6a: миграция `opds_catalog.0003_catalog_source_mtime_ns` добавляет только
+nullable BigIntegerField к `Catalog`. Тест цепочки 0001→0003 на одноразовой
+БД подтвердил сохранность ID каталога/книги/полки и NULL у старых маркеров
+времени книги и каталога (1/1, exit 0). `makemigrations --check --dry-run`
+прошёл, test-БД удалена. Логи: `.local/logs/m03-catalog-makemigrations.log`,
+`m03-catalog-migration-test.log`. Копии прежней рабочей БД нет.
+
+M03.6b/c: ZIP и INPX теперь сравниваются по размеру и `st_mtime_ns` каталога;
+маркер записывается после успешного разбора. ZIP-обработка атомарна для всего
+архива: ошибка чтения или книги откатывает частичные изменения. Изменённый
+INPX заставляет перечитать вложенный INP, затем обновляет метаданные, авторов,
+жанры и серии в прежней строке. Пять адресных тестов проверили замену ZIP/INPX
+того же размера, повторный пропуск, сохранность полки, повреждение обоих
+архивов и откат частичной обработки ZIP (5/5, exit 0). Общий набор: 69/69,
+exit 0, замечаний Django нет; одноразовая test-БД удалена. Логи:
+`.local/logs/m03-archive-targeted-2.log`, `m03-archive-general-final.log`.
+Миграция прежней рабочей БД остаётся непроверенной без её копии.
+
+M03.7: тест вызвал `Command.scan()` на временной копии книги, затем удалил
+исходный файл и прервал следующий обход сразу после обработки нового файла.
+Внешняя транзакция команды откатила новую запись и промежуточную пометку
+доступности; старые ID, `avail=2` и полка сохранились (1/1, exit 0). Общий
+набор: 70/70, exit 0; test-БД удалена. Логи:
+`.local/logs/m03-interruption-test.log`, `m03-interruption-general.log`.
+Этот тест фиксирует поведение до ограничения транзакций: после такого изменения
+допустимы завершённые добавления, но отсутствующие книги нельзя помечать или
+удалять при прерванном обходе.
+
+M03.8a: миграция `opds_catalog.0004_book_last_seen_scan_id` добавляет nullable
+UUIDField к `Book`. Тест цепочки 0001→0004 сохранил ID книги/полки и подтвердил
+NULL у старых маркеров книги и каталога (1/1, exit 0).
+`makemigrations --check --dry-run` прошёл; одноразовая test-БД удалена.
+Логи: `.local/logs/m03-scan-id-makemigrations.log`,
+`m03-scan-id-migration-test.log`.
+
+M03.8b/c: UUID текущего обхода записывается для обычной книги, пропущенного
+ZIP/INPX и каждой обработанной записи архива. Пометка или удаление остальных
+книг выполняется в отдельной финальной транзакции только после полного обхода.
+Внешняя транзакция команды убрана; атомарность сохраняется на уровне книги,
+архива и финализации. Прерванный обход оставляет завершённое добавление, но
+старую книгу и полку не удаляет; повторный успешный обход корректно ставит
+`avail=0` старой полочной книге и сохраняет ID добавленной. Неизменный ZIP не
+восстанавливает книгу, удалённую из архива ранее. Защитный набор: 17/17,
+общий набор: 71/71, exit 0, замечаний Django нет. Одноразовая test-БД удалена.
+Логи: `.local/logs/m03-bounded-safety-2.log`, `m03-bounded-general.log`.
+Архив обрабатывается одной транзакцией на архив; размер её зависит от архива.
+
+M04.1: в отдельной test-БД созданы две записи книги с искусственными файлами
+в `TemporaryDirectory`: `Book.path=..` и ссылка внутри библиотеки на файл
+вне корня. Публичный маршрут Download вернул HTTP 200 в обоих случаях вместо
+ожидаемого 404 (2 ожидаемых падения, exit 1). Причина — `os.path.join` без
+проверки разрешённого пути; тот же шаблон используется в HTML, конвертации и
+обложках. Test-БД удалена. Лог: `.local/logs/m04-path-before.log`.
+
+M04.2: `resolve_book_source_path` нормализует реальный путь книги или архива,
+проверяет нахождение внутри разрешённого корня и существование файла. Он
+используется в Download, чтении для HTML/Telegram, конвертации и обеих версиях
+обложки. Адресные тесты проверили HTTP 404 для `..` в каталоге и имени,
+symlink вне корня, отказ HTML/конвертации/обложек, а также успешную выдачу
+обычной книги, ZIP и INPX (7/7, exit 0). Общий набор: 78/78, exit 0,
+замечаний Django нет; одноразовая test-БД удалена. Логи:
+`.local/logs/m04-path-targeted-2.log`, `m04-path-general.log`.
+Проверка пути и открытие файла происходят отдельно; смена symlink между ними
+остаётся отдельным риском для библиотеки с недоверенными писателями.
+
+M04.3: два теста с искусственными файлами подтвердили запись и удаление за
+пределами `SOPDS_TEMP_DIR`: `getFileDataConv` удалил соседний файл, а HTTP
+конвертер прочитал его вместо ZIP-книги (1 ошибка и 1 падение, exit 1).
+Теперь оба пути используют `TemporaryDirectory` с фиксированными именами
+`source.fb2` и `output.<format>`; HTTP-путь читает ZIP-книгу через общий
+`getFileData` без `extract` по имени из каталога. Адресные 4/4, общий набор
+80/80, exit 0, замечаний Django нет. Тесты подтвердили сохранность соседних
+файлов и отсутствие оставшихся временных файлов; test-БД удалена. Логи:
+`.local/logs/m04-temp-before.log`, `m04-temp-targeted-final.log`,
+`m04-temp-general.log`.
+
+M04.4: искусственный конвертер записал файл и задержался на 2 с; до исправления
+вспомогательный путь дождался его и вернул результат (1 ожидаемое падение,
+exit 1). Другой конвертер завершился с кодом 7 после записи частичного файла;
+путь до исправления тоже вернул его (1 ожидаемое падение, exit 1). Теперь
+`communicate()` ограничен 300 с; при тайм-ауте завершается отдельная группа
+процессов и удаляется только собственный временный каталог. Ненулевой код
+отклоняет результат. Адресные 6/6 и общие 82/82 тестов прошли, exit 0,
+test-БД удалена. Логи: `.local/logs/m04-timeout-before.log`,
+`m04-converter-error-before.log`, `m04-timeout-targeted-final.log`,
+`m04-timeout-general.log`.
+
+M04.5: четыре адресных теста для Download обычной книги, ZIP-члена, INPX-члена
+и ZIP-обёртки подтвердили `response.streaming=False` (4 ожидаемых падения,
+exit 1). В `Download` исходный файл читается `read()` без размера и полностью
+пишется в `HttpResponse`; ресурсы закрываются только в конце успешного пути.
+Для ZIP-обёртки также создаётся весь архив в `BytesIO`. Test-БД удалена.
+Лог: `.local/logs/m04-stream-before.log`.
+
+M04.6: обычный файл отдаётся через `FileResponse`, ZIP/INPX-член — через
+`StreamingHttpResponse` порциями 64 КиБ. ZIP-обёртка собирается из порций в
+`TemporaryFile`, затем отдаётся как файл; имя вложенного элемента не содержит
+компонентов пути. Тесты проверили содержимое всех четырёх ветвей, несколько
+ограниченных порций для файла 150 КБ и имя ZIP-члена. Адресные 10/10, общий
+набор 85/85, exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-stream-targeted-final.log`, `m04-stream-general-final.log`.
+Вспомогательные `getFileData`/`getFileDataZip` ещё буферизуют файл целиком;
+они используются Telegram и конвертером и проверяются отдельно.
+
+M04.7: `getFileData` и `getFileDataZip` прежде возвращали `BytesIO`, что
+подтверждено двумя ошибками `fileno` в адресных тестах (exit 1). Теперь оба
+возвращают закрываемые файловые временные буферы и переносят книгу порциями;
+ZIP-имя лишено компонентов пути. Проверены чтение книги, ZIP для Telegram,
+сохранение интерфейса конвертации и завершение буферов после `with`.
+Затронутые 23/23 и общий набор 88/88 тестов прошли, exit 0, замечаний
+Django нет; test-БД удалена. Логи: `.local/logs/m04-helper-before.log`,
+`m04-helper-targeted-last.log`, `m04-helper-general.log`.
+
+M04.8a: ошибки разбора оставляли открытыми обычный файл и ZIP в Cover/Cover0;
+адресные проверки до исправления получили по два ожидаемых падения (exit 1).
+Обе ветви используют контекстные менеджеры, включая член архива и запасную
+обложку. Настоящая FB2-обложка из обычного файла и ZIP сохранила HTTP 200/JPEG.
+Адресные 6/6 и общие 94/94 тестов прошли, exit 0, замечаний Django нет;
+test-БД удалена. Логи: `.local/logs/m04-cover-before.log`,
+`m04-cover-legacy-before.log`, `m04-cover-targeted-final.log`,
+`m04-cover-general.log`.
+
+M04.8b: оба пути Cover передавали парсеру весь обычный файл или распакованный
+ZIP-член без предела; два адресных теста до исправления дали ожидаемые падения
+(exit 1). Теперь читается максимум 32 МиБ + 1 байт и более крупный источник
+отклоняется до разбора. При наличии запасной обложки она возвращается; иначе
+HTTP 404. Скачивание книги не ограничено этим пределом. Граница 32 МиБ
+пропускает обычную обложку, 8/8 адресных и 96/96 общих тестов прошли,
+exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-cover-size-before.log`, `m04-cover-size-targeted-final.log`,
+`m04-cover-size-general.log`.
+
+M04.8c: реальные обычная и ZIP FB2 до исправления обе падали с
+`FileNotFoundError` на `/sopds/convert/fb2_to_html.py` (2 ошибки, exit 1).
+ViewHtml теперь вызывает скрипт из checkout через текущий Python, копирует
+источник порциями во временный каталог `SOPDS_TEMP_DIR`, очищает его после
+успеха и тайм-аута, ограничивает процесс 300 с. Оба формата вернули HTML с
+названием книги; тест тайм-аута проверил HTTP 404 и очистку каталога.
+Адресные 3/3 и общие 98/98 тестов прошли, exit 0, замечаний Django нет;
+test-БД удалена. HTML-ответ по-прежнему собирается в памяти. Логи:
+`.local/logs/m04-html-before.log`, `m04-html-targeted-final.log`,
+`m04-html-general.log`.
+
+M04.8d: ViewHtml возвращал буферизованный `HttpResponse` (2 ожидаемых
+падения `response.streaming=False`, exit 1). Теперь готовый HTML копируется
+порциями во временный файл с сохранением вставки стиля и возвращается через
+`FileResponse`. Тест проверил `</head>` на границе порций; обычная и ZIP FB2
+вернули прежние название и стиль. Общий набор 100/100, exit 0, замечаний
+Django нет; test-БД удалена. Сам HTML-конвертер всё ещё разбирает XML в
+отдельном процессе целиком. Логи: `.local/logs/m04-html-stream-before.log`,
+`m04-html-stream-targeted-final2.log`, `m04-html-stream-general.log`.
+
+M04.8e: при ошибке callback INPX оставлял открытыми архив и INP-член;
+`structure.info` и строка INP читались без предела (3 ожидаемых падения,
+exit 1). Теперь оба ресурса и проверки ZIP-книги закрываются контекстными
+менеджерами; `structure.info` ограничен 64 КиБ, строка INP — 1 МиБ.
+Превышение вызывает `ValueError`, существующая транзакция scan сохраняет
+старую книгу, ID, полку и маркер архива. Адресные 4/4 и общие 104/104
+тестов прошли, exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-inpx-before.log`, `m04-inpx-targeted-final.log`,
+`m04-inpx-general.log`.
+
+M04.8f: scan передавал распакованную ZIP-книгу парсеру независимо от размера
+(адресный тест дал ожидаемое 2 вместо 1 вызова, exit 1). Теперь книга свыше
+128 МиБ распакованного размера отклоняется до открытия члена; весь изменённый
+архив откатывается, прежние книга/ID/полка и маркер каталога сохраняются.
+Адресный 1/1 и общий набор 105/105 тестов прошли, exit 0, замечаний Django
+нет; test-БД удалена. Логи: `.local/logs/m04-scan-zip-before.log`,
+`m04-scan-zip-targeted.log`, `m04-scan-zip-general.log`.
+
+M04.8g: при изменении обычной книги scan вызывал парсер и для файла свыше
+предусмотренного предела (адресный тест получил 1 вызов вместо 0, exit 1).
+Теперь общий предел обычной и ZIP-книги — 128 МиБ; обычная крупная книга
+пропускается после пометки существующей записи посещённой. Её прежние ID,
+название, доступность и полка сохраняются. Адресные 2/2 и общие 106/106
+тестов прошли, exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-scan-regular-before.log`, `m04-scan-regular-targeted.log`,
+`m04-scan-regular-general.log`. Конвертер HTML по-прежнему разбирает FB2
+целиком в отдельном процессе; вход scan ограничен указанным пределом.
+
+M04.9a: `SearchAuthorsView` на странице пяти авторов выполнил пять отдельных
+`COUNT` по книгам; адресный тест ожидал не более одного и получил 5
+(exit 1). Лог: `.local/logs/m04-web-queries-before.log`; test-БД удалена.
+
+M04.9b: поиск авторов использует `Count('book')` в запросе страницы.
+Пять авторов и одна связанная книга дали ожидаемые значения `[1,0,0,0,0]`;
+отдельных COUNT по каждому автору больше нет. Адресный 1/1 и общий набор
+107/107 тестов прошли, exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-web-queries-targeted.log`, `m04-web-queries-general.log`.
+
+M04.9c: OPDS-поиск пяти авторов выполнил 10 отдельных COUNT (в формировании
+списка и в описаниях элементов); адресный тест дал ожидаемое падение, exit 1.
+Теперь значения `[1,0,0,0,0]` приходят через `Count('book')`, а описание
+использует их без нового запроса. Адресные 2/2 и общие 108/108 тестов прошли,
+exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-opds-author-count-before.log`,
+`m04-opds-author-count-targeted.log`, `m04-opds-author-count-general.log`.
+
+M04.9d: web-поиск книги с `annotation='NotYet'` вызвал `get_annotation`
+прямо при рендере (1 вместо 0, ожидаемое падение, exit 1). Эта функция
+открывает INPX ZIP и разбирает книгу, после чего пишет аннотацию в БД.
+Исходная INPX-запись не содержит аннотацию; перенос разбора в scan может
+заметно увеличить время обновления больших индексов. Выбор поведения
+запрошен у пользователя. Лог: `.local/logs/m04-annotation-before.log`;
+test-БД удалена.
+
+M04.9e: web-каталог пяти книг с одним автором вызвал 10 SELECT к таблице
+связей авторов (проверка `.count` и вывод `.values` для каждой книги);
+адресный тест ожидал не более одного и дал ожидаемое падение, exit 1.
+Лог: `.local/logs/m04-catalog-queries-before.log`; test-БД удалена.
+
+M04.9f: каталог предзагружает авторов только для видимых книг и передаёт
+шаблону список объектов без повторных `.count`/`.values`. Пять имён остались
+в ответе, запросов связей стало 1. Адресный 1/1 и общий набор 109/109
+тестов прошли, exit 0, замечаний Django нет; test-БД удалена. Логи:
+`.local/logs/m04-catalog-queries-targeted.log`,
+`m04-catalog-queries-general.log`.
+
+M04.9g: web-поиск пяти книг с автором, жанром и серией выполнил 30 SELECT
+к связям (повторные `.values` и шаблонные `.count`); адресный тест ожидал
+не более четырёх и дал ожидаемое падение, exit 1. Аннотации книг были
+готовыми, поэтому измерение не затрагивало ожидающий решения путь NotYet.
+Лог: `.local/logs/m04-book-relations-before.log`; test-БД удалена.
+
+M04.9h: web-поиск предзагружает авторов, жанры, серии и номера серии только
+для текущей страницы. Шаблон получает готовые списки; тест пяти книг
+подтвердил имена и не более четырёх SELECT к связям. Отдельный тест
+подтвердил счётчик дубликатов через границу страницы. Адресные 2/2 и общие
+111/111 тестов прошли, exit 0, замечаний Django нет; test-БД удалена.
+Логи: `.local/logs/m04-book-relations-targeted-final.log`,
+`m04-book-relations-general.log`.
+
+M04.9i: OPDS-поиск пяти книг с автором/жанром/серией выполнил 20 SELECT
+связей при формировании ленты; адресный тест ожидал не более четырёх и дал
+ожидаемое падение, exit 1. Лог:
+`.local/logs/m04-opds-book-relations-before.log`; test-БД удалена.
+
+M04.9j: OPDS-поиск предзагружает авторов, жанры, серии и номера серии для
+видимой страницы; тест пяти книг подтвердил содержание ленты и не более
+четырёх SELECT связей. Отдельный тест сохранил число дубликатов на границе
+страницы. Адресные 2/2 и общие 113/113 тестов прошли, exit 0, замечаний
+Django нет; test-БД удалена. Логи:
+`.local/logs/m04-opds-book-relations-targeted-final.log`,
+`m04-opds-book-relations-general.log`.
+
+M04.9d1–d2: миграция 0005 добавила единственное задание на книгу без изменения
+ID и полок. INPX scan теперь сохраняет ранее полученную аннотацию и не
+ставит задания. Постановка показанных книг идемпотентна, готовые состояния
+перепроверяются не чаще раза в 24 часа. Тест цепочки миграций и 113/113
+общих тестов прошли после схемы; 3/3 адресных теста очереди/scan прошли,
+exit 0. Логи: `.local/logs/m04-annotation-schema-test.log`,
+`m04-annotation-schema-full.log`, `m04-annotation-queue-test.log`.
+
+M04.9d3–d4: отдельный child разбирает книгу с лимитами 16 МиБ, 512 МиБ
+адресного пространства, 20 с CPU, 30 с реального времени. Worker хранит
+lease, ограниченные повторы и сверяет книгу и ZIP перед записью. Проверены
+готовая/отсутствующая аннотация, повторное использование, повреждённый ZIP,
+лимит, восстановление lease, отклонение старого результата и защита от
+изменения книги/архива. Web/OPDS при поиске и каталоге не открывают ZIP,
+показывают только сохранённый текст; открытая web-страница получает обновление
+через endpoint. Адресные 10/10 worker и 4/4 web/OPDS тестов прошли, exit 0.
+Логи: `.local/logs/m04-annotation-worker-recovery-final.log`,
+`m04-annotations-web-test3.log`.
+
+M04.9d5: общий набор 129/129, `manage.py check` без замечаний,
+`makemigrations --check --dry-run` без изменений, exit 0. Test-БД удалена.
+Операторская инструкция: [фоновые аннотации](annotations.md). Реальная старая
+БД не предоставлена; её миграция остаётся непроверенной. Логи:
+`.local/logs/m04-annotation-general-final.log`,
+`m04-annotation-check-final.log`,
+`m04-annotation-makemigrations-final.log`.
+
+M04.9d6: финальный поиск нашёл старое `NotYet` в Telegram-карточке книги.
+Карточка теперь использует общий фильтр сохранённой аннотации. Адресные 5/5
+и общие 130/130 тестов прошли, exit 0, замечаний Django нет; test-БД удалена.
+Логи: `.local/logs/m04-annotation-telegram-targeted.log`,
+`m04-annotation-general-telegram-final.log`.
+
+## M05 — готовность кандидата
+
+M05.1: Django test runner создал пустую `test_sopds_m00b_test` и применил
+текущую цепочку миграций. Адресный тест дополнительно перевёл искусственную
+запись из схемы `opds_catalog.0001` в `0005` и сохранил ID книги и полки,
+аннотацию и ID связей автора, жанра, серии (включая номер серии). 1/1 тест
+прошёл, exit 0, замечаний Django нет; test-БД удалена. Реальная прежняя БД
+не предоставлена, её перенос не проверен. Лог:
+`.local/logs/m05-migration-preservation.log`.
+
+M05.2a: тест повторного scan дополнен проверкой ID связей автора/жанра и
+доступности книги. Вместе с проверками изменённой обычной, ZIP и INPX книги
+4/4 теста прошли, exit 0, замечаний Django нет; test-БД удалена. Лог:
+`.local/logs/m05-repeat-scan.log`.
+
+M05.2b: smoke-тест с `DEBUG=False` на временной искусственной книге проверил
+web-поиск, OPDS-поиск, потоковое скачивание, admin index и список жанров.
+1/1 тест прошёл, exit 0; test-БД удалена. С `SOPDS_DEBUG=0` отдельный
+`manage.py check` сообщил 0 замечаний; модуль настроек подтвердил
+`DEBUG=False`. Первую прямую проверку `django.conf.settings` без
+`DJANGO_SETTINGS_MODULE` отклонил Django; повтор с явным модулем прошёл —
+это ошибка диагностической команды, а не приложения. Логи:
+`.local/logs/m05-candidate-smoke.log`, `.local/logs/m05-debug-off-check.log`.
+
+M05.3a: инструкция [backup/restore/отката](operations.md) задаёт проверки
+назначения и восстановление только в новую БД. Локальный `pg_dump` 16.15
+при read-only `--schema-only --file=/dev/null` отклонил сервер 17.11 из-за
+несовпадения версий, exit 1; дамп и данные не изменялись. Для пробного
+восстановления нужен клиент PostgreSQL 17, устанавливаемый человеком.
+Лог: `.local/logs/m05-pgdump-client-check.log`.
+
+M05.3b: добавлен только тестовый workflow `.github/workflows/tests.yml`:
+Ubuntu 24.04, Python 3.13, PostgreSQL 17, `uv sync --frozen`, Django check,
+проверка миграций и общий набор. Локальный YAML-парсер подтвердил структуру;
+с dev PostgreSQL 17 локальный offline `uv sync` проверил 17 пакетов,
+`manage.py check` дал 0 замечаний, `makemigrations --check --dry-run` не нашёл
+изменений, 131/131 тестов прошли, exit 0; test-БД удалена. Удалённый GitHub
+Actions не запускался, поскольку push не разрешён. Логи:
+`.local/logs/m05-ci-uv-sync.log`, `m05-ci-check.log`, `m05-ci-migrations.log`,
+`m05-ci-tests.log`.
+
+M05.4: общий локальный эквивалент CI дал 131/131 тестов, exit 0; test-БД
+удалена. Отдельный `SOPDS_DEBUG=0 manage.py check --deploy` завершился с
+четырьмя предупреждениями W004/W008/W012/W016 (HSTS, HTTPS redirect,
+Secure-флаги cookies) для ещё не определённой HTTPS-схемы; критических
+ошибок проверки нет. Итоговые подтверждения и внешние условия записаны в
+[candidate.md](candidate.md). Лог: `.local/logs/m05-deploy-check.log`.
+
+## M06.11 — SQL полки и настроек (2026-09-25)
+
+Локальный runner `.local/run-m06-integrity-tests.sh` загружает dev-окружение
+без вывода секретов, проверяет тестовый адрес/роль, PostgreSQL 17 и отсутствие
+`test_sopds_m06_integrity_20260925`. Далее запускает
+`DB_NAME=sopds_m06_integrity_20260925 .venv/bin/python manage.py test --noinput`
+с `DJANGO_SETTINGS_MODULE=sopds.settings`; Django создаёт и удаляет новую
+test-БД. До исправления новые тесты выявили шесть падений по числу SQL.
+После исправления адресные `test_web_settings_queries`, `test_web_queries`,
+`test_http_security`, `test_stable_ordering` — 33/33; общий набор — 174/174
+за 36,630 с, exit 0. Test-БД удалены.
+
+`.venv/bin/python manage.py check` и
+`.venv/bin/python manage.py makemigrations --check --dry-run` с проверенным
+dev-окружением завершились с exit 0: замечаний и новых миграций нет.
+Dev-БД и HTTPS probe не мигрировались, службы не перезапускались.
+Логи: `.local/logs/m06-web-sql-before.log`, `m06-web-sql-targeted.log`,
+`m06-web-sql-full.log`, `m06-web-sql-check.log`, `m06-web-sql-migrations.log`.
+[Замеры SQL и пределы проверки](m06-web-sql.md).
+
+## M06.13–M06.15: нативный запуск (2026-09-26)
+
+Адресный Gunicorn/converter набор через `.local/run-m06-integrity-tests.sh`:
+16/16; общий — 179/179. Scanner lifecycle/scan safety/annotation worker:
+33/33. Чистый локальный эквивалент CI через `.local/m06-ci-verify.py` с
+новой `sopds_m06_ci_20260926` и TIME_ZONE=UTC: `uv sync --frozen --offline`,
+`manage.py check`, `makemigrations --check --dry-run`,
+`manage.py test --noinput` — exit 0, 182/182 за 87.662 с. Все созданные CI/test
+БД удалены. Исправлен подтверждённый KeyError TIME_ZONE в remote workflow.
+
+`gunicorn --check-config --config infra/gunicorn.conf.py sopds.wsgi:application`
+и `systemd-analyze --user verify` трёх шаблонов прошли. Probe обновлён до
+0006 после проверенного восстановления снимка на новой копии; сохранность
+строк подтверждена до HTTP smoke. Новый HTTPS smoke и private check
+прошли (единственный ожидаемый W004). Команды, ограничения и логи —
+в [m06-runtime.md](m06-runtime.md). Обычные команды были недоступны из-за
+bubblewrap; пользователь разрешил штатную эскалацию, использован этот путь.
+
+
+## M07.1 — подготовка Dockerfile/Compose, 2026-09-26
+
+Цель размещения изменена пользователем на Docker. Подготовлены root Dockerfile,
+`.dockerignore`, `infra/docker/compose.yaml`, Caddy image/config, entrypoint,
+HTTP healthcheck, init роли БД и пример env. Команды первого запуска и критерии
+M07.2 — [docker.md](docker.md). Существующий dev-db Compose и HTTPS-стенд не изменены.
+
+| Проверка | Результат |
+|---|---|
+| Публичные registry manifests Python 3.13.15, uv 0.12.18, PostgreSQL 17.11, Caddy 2.11.4 | Digest закреплены; общие linux/amd64 и linux/arm64. Образы не скачивались и не запускались. |
+| `docker compose -f infra/docker/compose.yaml --profile tools config --format json` с искусственным env | Exit 0: шесть сервисов, non-root/cap_drop, единственный LAN HTTPS-порт 9443, backend internal, четыре отдельных тома, библиотека read-only и create_host_path=false. Проверены итоговые stop_grace_period. Docker daemon не используется. |
+| `config --quiet` без одного из пяти обязательных параметров | Все пять случаев отвергнуты; реальные секреты не использованы/не выводились. |
+| `SOPDS_PRIVATE_HOST=192.168.88.44 .local/caddy-probe/bin/caddy adapt --config infra/docker/Caddyfile --adapter caddyfile` | Exit 0: HTTPS :8443, admin off, skip_install_trust, grace_period 330 с. Никакой сервер не запущен. |
+| `sh -n infra/docker/entrypoint.sh infra/docker/init-db.sh` | Exit 0. Init SQL пока не выполнялся в контейнере. |
+| Нативный subprocess entrypoint | Exit-код дочернего процесса 23 сохранён, файл 0600, PID после exec совпал, SIGTERM обработан дочерним процессом с exit 0. |
+| `.venv/bin/python .local/m07-package-check.py` | Выбранные исходники в отдельном временном каталоге: `manage.py check`, `collectstatic --noinput` (461 файл), `gunicorn --check-config --config infra/gunicorn.conf.py --bind 0.0.0.0:8000 sopds.wsgi:application` — exit 0. Использован нативный venv, не Docker image. |
+| `SOPDS_PRIVATE_HOST=192.168.88.44 .venv/bin/python infra/docker/healthcheck.py` | Exit 0 на действующем native Gunicorn, без пароля. |
+| `bash .local/run-m06-integrity-tests.sh .local/logs/m07-targeted-tests.log opds_catalog.tests.test_private_settings opds_catalog.tests.test_gunicorn_requests opds_catalog.tests.test_scanner_lifecycle opds_catalog.tests.test_annotation_worker opds_catalog.tests.test_conversion_process` | 22/22, 47.183 с, exit 0. Одноразовая test-БД удалена; сохранность scanner/полок входит в адресные тесты. |
+| Native probe: `systemctl --user is-active` и curl с его CA к `https://192.168.88.44:8443/opds/` | Обе службы active; TLS проходит без обхода проверки, без входа ожидаемый 401. |
+| `git diff --check` | Exit 0. |
+
+Логи: `.local/logs/m07-config-check.log`, `m07-caddy-adapt.json`,
+`m07-package-check.log`, `m07-targeted-tests.log`. В промежуточной проверке JSON
+ошибочно ожидался `grace_period` внутри server; `caddy adapt` помещает его в
+`apps.http`. Исправлен только проверочный скрипт; итоговая проверка прошла.
+
+M07.1 завершает подготовку. M07.2 остаётся заблокирован до операторского build
+и smoke: реальная сборка, доступность wheels внутри image, права томов/библиотеки,
+PostgreSQL init, TLS/OPDS/download/worker и сохранность при restart ещё не доказаны.
+Общий последний локальный набор 182/182 относится к M06; в M07 выполнены адресные
+22 теста. Правила Docker socket/root не обходились; текущий стенд читалки работает.
+
+
+## M07.2 — сборка и контейнерный smoke, 2026-09-27
+
+Пользователь явно поручил сборку/контейнерную проверку. Разрешён локальный Docker
+context default (`unix:///var/run/docker.sock`), без sudo/root на хосте. До запуска
+не было контейнеров/томов/сетей sopds-container. Порт 9443 принадлежал Portainer;
+выбран свободный 9444. Текущие нативные службы/БД/библиотека не изменялись.
+
+`DC` ниже обозначает `docker compose --env-file .local/container.env
+-f infra/docker/compose.yaml -f infra/docker/compose.amd64.yaml`; секреты в вывод
+не попадали. Во время прогона использовалась локальная копия того же override;
+равенство resolved config подтверждено. Образы: sopds-app:local / sopds-caddy:local.
+
+| Команда / проверка | Результат |
+|---|---|
+| `docker compose --env-file .local/container.env -f infra/docker/compose.yaml build web caddy` | Exit 0, locked 18 пакетов; runtime Python 3.13.15, Django 5.2.17; Caddy 2.11.4. Контекст app 6.99 МБ. |
+| Два `up -d --wait db` через multiarch digest | Timeout Docker Hub. После проверки public index/amd64 manifests явный `docker pull --platform linux/amd64 postgres:17.11-bookworm@sha256:91eb910c44c7ed13f7f1a4ccadaa9ca72ef14cddc04cacb6e070e48eb44731a3` — exit 0. Последующий multiarch up снова завис; остановлены только его два клиента. |
+| `DC up -d --wait db` с точным amd64 digest | Exit 0; `17.11 (Debian 17.11-1.pgdg12+2)`, свежий pgdata. Версия/слои БД не подменялись; digest является amd64-членом committed index. |
+| `python3 .local/m07-container-setup.py` | check, migrate, genres, явные /library и /tmp/sopds, scanner log /tmp, collectstatic и scan — exit 0. 3 искусственные книги/1 полка; role sopds без SUPERUSER/CREATEDB/CREATEROLE. Запись в /library и /app запрещена. |
+| `docker run --rm --network none --read-only --cap-drop ALL ...` для образов | UID10001, импорты зависимостей работают; `.local`/`.git`/env/книги/тесты/старые converter binaries отсутствуют, шесть миграций присутствуют; Caddy запускается без capabilities. |
+| TLS до исправления: `openssl s_client` с CA и verify_ip | Без SNI exit 1 (internal error); с `-servername 192.168.88.44` exit 0. Установлен default_sni, добавлен Caddy TLS healthcheck, образ пересобран. |
+| `python3 .local/m07-http-smoke.py` после исправления | TLS/CA/IP без обхода, 401/200, OPDS/search, SHA256 direct/ZIP downloads, FB2-preview/CSP, отдельный INPX worker, медленный >8 МиБ download с параллельным каталогом, CSRF 403/успешный вход/admin/static — всё прошло. |
+| `python3 .local/m07-container-tests.py` | Внутри app image: 182/182 за 118.011 с, exit 0. Отдельная роль/база sopds_m07_testbase_20260927; test-данные read-only, исполняемый tmpfs только у runner для converter fixtures. Test-БД/base/роль удалены. Runtime app-роль не повышалась. |
+| `python3 .local/m07-integrity.py` | Повторный scan сохранил ID/полки/readtime; контролируемый active scan дождался освобождения после Docker SIGTERM и завершился exit 0. Probe-контейнер удалён. |
+| Тот же integrity: `DC restart`, затем `up --wait` | Хеши строк всех таблиц и CA совпали до/после перезапуска всех пяти сервисов; повторный migrate не меняет данные. |
+| `pg_dump -Fc`, `pg_restore --exit-on-error` в sopds_m07_restore_20260927 | Все таблицы совпали по количеству/хешам строк. Restore-БД удалена. Backup сохранён в `.local/backups/m07-container-20260927/` (0700, файлы 0600). Архив библиотеки и сама библиотека совпали с исходными SHA256. |
+| `python3 .local/m07-long-preview.py` | Временные read-only test mounts добавляли 32-секундную задержку встроенному FB2-preview. SIGTERM web и отдельно Caddy сохранил HTTPS-ответ после 33.2 с каждый; параллельный каталог работал. Исходный image восстановлен, mounts сняты. |
+| `python3 .local/m07-final-audit.py` | Пять процессов non-root, cap_drop ALL/no-new-privileges, read-only app/library, только LAN9444 опубликован, 0 аварийных restart. db/web/caddy healthy. Исходный preview снова быстрый, test/restore-БД и test-роль отсутствуют. |
+| `DC run --rm -T manage check --deploy` | Только ожидаемый security.W004; HSTS ждёт физической читалки. |
+
+Логи: `.local/logs/m07-build.log`, `m07-db-start*.log`,
+`m07-postgres-pull-platform.log`, `m07-container-setup.log`, `m07-container-tests.log`,
+`m07-tls-*.log`, `m07-caddy-*.log`, `m07-http-smoke-fixed.log`, `m07-integrity.log`,
+`m07-long-preview.log`, `m07-final-audit.log`, `m07-deploy-check.log`.
+Первый HTTP-smoke намеренно зафиксировал TLS-дефект; проверки не ослаблялись.
+Физическая читалка, reboot и arm64 остаются непроверенными. Контур завершается
+`DC stop` с сохранением образов/томов; постоянный deployment и push не выполняются.
+
+Итог M07.2: `DC stop` — все пять контейнеров exited/0 (сводка `.local/m07/final-status.json`).
+Native user services active, HTTPS 8443 с доверенным CA — 401 без входа.
+Portainer продолжает работать на 9443. `git diff --check` — exit 0.
+
+
+## M09 — комплект TrueNAS SCALE без развёртывания, 2026-10-18
+
+- `python3 scripts/truenas/build-kit.py --output .local/sopds-truenas-kit`: exit 0; app/Caddy собраны и вместе с закреплённым PostgreSQL экспортированы. Сервисы не запускались.
+- `python -m unittest opds_catalog.tests.test_truenas opds_catalog.tests.test_backup_retention opds_catalog.tests.test_backup_schedule`: exit 0, 19/19; .local/logs/m09-targeted.log.
+- Первый общий прогон: 214/215, только browser failure (нет bundled Chromium).
+- `DB_NAME=sopds_m09_browser SOPDS_BROWSER_TESTS=1 SOPDS_BROWSER_EXECUTABLE=/opt/google/chrome/chrome .venv/bin/python manage.py test opds_catalog.tests.test_browser --noinput`: exit 0, 1/1, реальный Chrome.
+- После загрузки разрешённого `.local/dev.env` без вывода секретов: `DB_NAME=sopds_m09_final SOPDS_BROWSER_TESTS=1 SOPDS_BROWSER_EXECUTABLE=/opt/google/chrome/chrome .venv/bin/python manage.py test --noinput`: exit 0, Ran 218 tests in 85.292s, 218/218; отдельная test_sopds_m09_final удалена runner. Лог .local/logs/m09-tests-final.log.
+- Python syntax и `git diff --check`: exit 0. Старые SyntaxWarning invalid escape из legacy исходников не менялись.
+- Итоговый tar.gz распакован во временный каталог, SHA256 архива/всех файлов совпали; копии скриптов совпали с репозиторием. Из самого пакета создана приватная временная конфигурация, bootstrap/full config разобраны `docker compose ... --profile tools config --format json` без daemon: build отсутствует, pull never, только HTTPS опубликован, библиотека read-only, bind-пути абсолютные.
+- images.tar: все три платформы linux/amd64, USER app/Caddy=10001:10001, postgres UID/GID=999:999. ID index/manifest/config сохранены для разных Docker image stores.
+- Комплект .local/sopds-truenas-kit.tar.gz, 236201075 байт; .local/sopds-truenas-kit.tar.gz.sha256. Реальных секретов и книг в нём нет.
+- TrueNAS не подключался, развёртывание/расписание/публикация не выполнялись. Приёмка ACL/HTTPS/читалки/reboot остаётся будущей установке.
+
+
+## M10 — приватный GHCR, локальная проверка 2026-10-18
+
+- `python3 -m unittest opds_catalog.tests.test_truenas opds_catalog.tests.test_backup_retention opds_catalog.tests.test_backup_schedule`: 24/24, registry/offline, SHA/allowlist, digest/платформа, отказ анонимного доступа.
+- Общий набор с отдельной `DB_NAME=sopds_m10_final`, Chrome `/opt/google/chrome/chrome`: 223/223 за 85.703 с, браузерный smoke включён; `.local/logs/m10-tests-full.log`. Тестовая БД удалена.
+- `actionlint` v1.7.12 (официальный архив, SHA256 проверен): оба workflow без ошибок. Python syntax и git diff --check прошли.
+- Registry-комплект с демонстрационными digest-ссылками `.local/m10-package-check.tar.gz` создан; оба YAML прошли Compose config --quiet. Это только тест генерации, не выпуск для установки.
+- Workflow публикует только по тегам truenas-* после переиспользуемых тестов; только GITHUB_TOKEN packages:write. Проверяет private и отказ anonymous, выполняет реальный pull перед сохранением небольшого artifact (90 дней).
+- Первый реальный выпуск/проверка GHCR ещё ожидаются; TrueNAS не подключался, установка исключена.
+
+- Первичный publish run39129841214: Tests success, обе сборки прошли; API postcheck отказал, anonymous HEAD подтвердил public. По metadata пакеты созданы этим запуском (13:05:26/33 UTC), по одной версии bd486b2; runtime не содержал локальных данных.
+- Cleanup run39143277809 проверил единственную версию, точные digest и commit-tag перед удалением обоих пакетов; success. Повторный независимый anonymous запрос получает403 для обоих.
+- Исправление: новые имена пакетов, пустой scratch seed и подтверждение private/anonymous-denied ДО передачи runtime-слоёв, без source-label привязки к публичному repo. 25 адресных тестов и actionlint проходят.
