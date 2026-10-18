@@ -1,0 +1,46 @@
+name: Remove initial GHCR publication
+on:
+  push:
+    tags: ['ghcr-repair-2026.10.18.2']
+permissions:
+  contents: read
+  packages: write
+jobs:
+  cleanup:
+    if: github.repository == 'DenBond007/sopds'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Remove only the empty seed created by the private-visibility probe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          expected = {'sopds-private-app': 'sha256:027c9d9d6524675b058537c6782e0eb77b06528d8f60ef95bd2ef86a86e54cf8'}
+          tag = 'registry-bootstrap'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'}
+          for name, digest in expected.items():
+              url = 'https://api.github.com/users/DenBond007/packages/container/' + name
+              try:
+                  with urlopen(Request(url, headers=headers), timeout=30) as r:
+                      package = json.load(r)
+              except HTTPError as error:
+                  if error.code == 404:
+                      print(name, 'already absent')
+                      continue
+                  raise
+              print(json.dumps({key: package.get(key) for key in ('name', 'visibility', 'created_at', 'version_count')}))
+              with urlopen(Request(url + '/versions?per_page=100', headers=headers), timeout=30) as r:
+                  versions = json.load(r)
+              assert len(versions) == 1, 'Refuse to delete unrelated versions'
+              version = versions[0]
+              assert version['name'] == digest, 'Unexpected digest'
+              assert version['metadata']['container']['tags'] == [tag], 'Unexpected tags'
+              assert package['visibility'] == 'public', 'Do not remove a private package'
+              with urlopen(Request(url, headers=headers, method='DELETE'), timeout=30) as r:
+                  assert r.status == 204
+              print(name, 'removed the initial public package')
+          PY

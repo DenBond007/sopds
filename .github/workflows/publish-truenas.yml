@@ -1,8 +1,13 @@
 name: Publish private TrueNAS images
 
 on:
-  push:
-    tags: ['truenas-*']
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'Commit SHA or release tag from DenBond007/sopds'
+        required: true
+        default: codex/library-operations
+        type: string
 
 permissions:
   contents: read
@@ -12,25 +17,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  source:
+    if: github.repository == 'DenBond007/sopds-images'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.revision.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: DenBond007/sopds
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+      - id: revision
+        run: printf 'commit=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   tests:
-    uses: ./.github/workflows/tests.yml
+    needs: source
+    uses: DenBond007/sopds/.github/workflows/tests.yml@80be05eafd5c886ae023c6053061642f0891b104
+    with:
+      source_repository: DenBond007/sopds
+      source_ref: ${{ needs.source.outputs.commit }}
     permissions:
       contents: read
 
   publish:
-    needs: tests
-    if: github.repository == 'DenBond007/sopds'
+    needs: [source, tests]
+    if: github.repository == 'DenBond007/sopds-images'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
     env:
-      APP_IMAGE: ghcr.io/denbond007/sopds-private-app
-      CADDY_IMAGE: ghcr.io/denbond007/sopds-private-caddy
+      SOURCE_SHA: ${{ needs.source.outputs.commit }}
+      APP_IMAGE: ghcr.io/denbond007/sopds-nas-app
+      CADDY_IMAGE: ghcr.io/denbond007/sopds-nas-caddy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          repository: DenBond007/sopds
+          ref: ${{ needs.source.outputs.commit }}
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to GHCR with the workflow token
@@ -40,18 +67,18 @@ jobs:
       - name: Confirm private packages before uploading application layers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/truenas/check-registry.py --owner DenBond007 --package sopds-private-app --package sopds-private-caddy --initialize
+        run: python3 scripts/truenas/check-registry.py --owner DenBond007 --package sopds-nas-app --package sopds-nas-caddy --initialize
       - name: Build and publish both images from this commit
         run: |
           docker buildx build --platform linux/amd64 --provenance=false \
-            --label "org.opencontainers.image.url=https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA" \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --tag "$APP_IMAGE:sha-$GITHUB_SHA" --metadata-file "$RUNNER_TEMP/app-image.json" \
+            --label "org.opencontainers.image.url=https://github.com/DenBond007/sopds/tree/$SOURCE_SHA" \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --tag "$APP_IMAGE:sha-$SOURCE_SHA" --metadata-file "$RUNNER_TEMP/app-image.json" \
             --push --file Dockerfile .
           docker buildx build --platform linux/amd64 --provenance=false \
-            --label "org.opencontainers.image.url=https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA" \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --tag "$CADDY_IMAGE:sha-$GITHUB_SHA" --metadata-file "$RUNNER_TEMP/caddy-image.json" \
+            --label "org.opencontainers.image.url=https://github.com/DenBond007/sopds/tree/$SOURCE_SHA" \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --tag "$CADDY_IMAGE:sha-$SOURCE_SHA" --metadata-file "$RUNNER_TEMP/caddy-image.json" \
             --push --file infra/docker/Caddy.Dockerfile infra/docker
       - name: Verify private access and package immutable references
         env:
@@ -60,7 +87,7 @@ jobs:
           app_digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/app-image.json")
           caddy_digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/caddy-image.json")
           python3 scripts/truenas/check-registry.py --owner DenBond007 \
-            --package sopds-private-app --package sopds-private-caddy \
+            --package sopds-nas-app --package sopds-nas-caddy \
             --image "$APP_IMAGE@$app_digest" --image "$CADDY_IMAGE@$caddy_digest"
           python3 scripts/truenas/build-kit.py --mode registry \
             --app-image "$APP_IMAGE@$app_digest" --caddy-image "$CADDY_IMAGE@$caddy_digest" \
@@ -70,7 +97,7 @@ jobs:
       - name: Save the configuration kit (no secrets or image layers)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sopds-truenas-ghcr-${{ github.ref_name }}
+          name: sopds-truenas-ghcr-${{ needs.source.outputs.commit }}
           path: |
             .local/sopds-truenas-ghcr.tar.gz
             .local/sopds-truenas-ghcr.tar.gz.sha256
