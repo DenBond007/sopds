@@ -78,9 +78,11 @@ def main():
     running = set(run(compose + ['ps', '--services', '--status', 'running']).decode().split())
     if not {'db', 'web', 'caddy'}.issubset(running):
         raise RuntimeError('Start the sopds-container environment before maintenance')
-    services = [name for name in ('scanner', 'annotations', 'web') if name in running]
+    services = [name for name in ('scanner', 'annotations', 'web', 'caddy') if name in running]
     web_id = run(compose + ['ps', '-q', 'web']).decode().strip()
     app_image = run(['docker', 'inspect', '--format', '{{.Image}}', web_id]).decode().strip()
+    caddy_id = run(compose + ['ps', '-q', 'caddy']).decode().strip()
+    caddy_image = run(['docker', 'inspect', '--format', '{{.Image}}', caddy_id]).decode().strip()
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     name = 'sopds-' + stamp + '-' + uuid.uuid4().hex[:8]
     pending = backup_root / ('.pending-' + name)
@@ -95,7 +97,9 @@ def main():
         with (pending/'database.dump').open('xb') as output:
             run(db + ['pg_dump', '-U', 'postgres', '-Fc', 'sopds'], output=output)
         with (pending/'caddy-data.tar').open('xb') as output:
-            run(compose + ['exec', '-T', 'caddy', 'tar', '-C', '/data', '-cf', '-', '.'], output=output)
+            # Caddy is stopped too: certificate/key renewal cannot race this archive.
+            run(compose + ['run', '--rm', '--no-deps', '--entrypoint', 'tar',
+                           'caddy', '-C', '/data', '-cf', '-', '.'], output=output)
         if not args.database_only:
             with (pending/'library.tar').open('xb') as output:
                 run(compose + ['run', '--rm', '--no-deps', '--entrypoint', 'tar',
@@ -131,7 +135,7 @@ def main():
         commit = run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).decode().strip()
         manifest = {'tool': 'sopds-maintenance-v1', 'verified': True,
             'completed_at': datetime.now(timezone.utc).isoformat(), 'commit': commit,
-            'app_image_id': app_image, 'uv_lock_sha256': checksum(ROOT/'uv.lock'),
+            'app_image_id': app_image, 'caddy_image_id': caddy_image, 'uv_lock_sha256': checksum(ROOT/'uv.lock'),
             'git_working_tree_dirty': bool(run(['git', '-C', str(ROOT), 'status', '--porcelain'])),
             'scope': 'database-and-library' if not args.database_only else 'database-only',
             'files': files, 'tables': fingerprints}

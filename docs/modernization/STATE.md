@@ -1,7 +1,7 @@
 # Текущее состояние
 
 - Задача: M08 — выполнить все рекомендации анализа по поручению пользователя 2026-10-18.
-- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; итоговый локальный commit готовится; push/CI требуют явного подтверждения после auto-review rejection.
+- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; push/CI требуют явного подтверждения после auto-review rejection.
 - M08.1–M08.5 done; M08.6 in_progress: публикация отдельной проверенной ветки для CI и итоговая фиксация.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
 - Реализованы: корректные ссылки и stateless Basic; совместные web/OPDS фильтры; отдельные личные списки; FB2 reader с серверной позицией; staff-only operations.
@@ -25,4 +25,5 @@
 - Нативная dev-БД не мигрировалась. Общие тесты создавали и удаляли только test_sopds_m08; benchmark — только sopds_bench_m08_20261018.
 - Посторонний ._sopds-codex-start.zip не трогать. Локальные env, credentials, backup и книги не коммитить.
 - Публикация: автоматическая проверка отклонила commit+push в DenBond007/sopds из-за отсутствия отдельного согласия на точные payload/destination; вопрос задан. Другой путь отправки не используется.
+- Backup завершает также Caddy на время снимка CA; реальные app/Caddy image IDs и uv.lock hash входят в manifest. Далее проверка этой финальной версии обслуживания.
 - Следующий шаг: commit собственных проверенных файлов, push codex/library-operations, результат удалённого CI; итоговый backup с image ID/commit, финальные health/расписание. Детали — m08-library-operations.md.
