@@ -1,8 +1,8 @@
 # Текущее состояние
 
 - Задача: M08 — выполнить все рекомендации анализа по поручению пользователя 2026-10-18.
-- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; пользователь явно разрешил push этой ветки в DenBond007/sopds 2026-10-18; удалённый CI проверяется.
-- M08.1–M08.5 done; M08.6 in_progress: согласие на публикацию получено, следующий шаг — push и фактический результат GitHub Actions. Локальные работы завершены.
+- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; опубликована в DenBond007/sopds по явному согласию пользователя; CI для 2b7a8dc success.
+- M08.1–M08.5 done; M08.6 done: push выполнен, GitHub Actions success, 203/203 теста за 80.881 с с Chromium. M06.3 также закрыта новым результатом CI.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
 - Реализованы: корректные ссылки и stateless Basic; совместные web/OPDS фильтры; отдельные личные списки; FB2 reader с серверной позицией; staff-only operations.
 - 0007 добавляет ReadingState/ServiceStatus; constraints уникальности/позиции. Старые модели не меняются.
@@ -28,5 +28,6 @@
 - Backup завершает также Caddy на время снимка CA; реальные app/Caddy image IDs и uv.lock hash входят в manifest. Финальная версия с общим lock полностью проверена реальным backup/restore.
 - Финальный snapshot: sopds-20261018T091240Z-73c49c23; код backup 24e223a, app/Caddy image IDs и uv.lock hash записаны, 24/24 таблицы восстановлены и совпали.
 - Финальные проверки: uv frozen/offline, npm ci/offline + CSS reproducibility, Python/vendor/diff, migrate --check/makemigrations, web/TLS health — OK. Deploy check: только намеренный W004. Docker/cron enabled; wrapper не повторяет успешный backup сегодня.
-- Локальные коммиты: 22ee7b6 (функции/CI/операции), 0acf343 (снимок CA), 24e223a (общий backup-lock). Push разрешён пользователем, результат CI пока не получен.
-- Следующий шаг: отправить codex/library-operations в DenBond007/sopds по полученному явному согласию, затем проверить новый GitHub Actions. Физическая читалка и reboot остаются внешними проверками. Детали — m08-library-operations.md.
+- Локальные коммиты: 22ee7b6 (функции/CI/операции), 0acf343 (снимок CA), 24e223a (общий backup-lock). Remote codex/library-operations опубликован; новый CI прошёл.
+- CI: [39117023516](https://github.com/DenBond007/sopds/actions/runs/39117023516), commit 2b7a8dc; CSS/vendor/source/check/migrations и все 203 теста прошли, browser smoke выполнен без skip. Лог приватно .local/logs/m08-ci-39117023516.log.
+- Следующий шаг: проверка физической читалки пользователем и согласованный reboot хоста; M08 завершена. Детали — m08-library-operations.md.
