@@ -33,6 +33,7 @@ jobs:
       DB_HOST: 127.0.0.1
       DB_PORT: '5432'
       TIME_ZONE: UTC
+      SOPDS_BROWSER_TESTS: '1'
       SOPDS_SECRET_KEY: ci-test-only-secret-key-at-least-32-characters
       SOPDS_DEBUG: '0'
       SOPDS_ALLOWED_HOSTS: testserver,127.0.0.1,localhost
@@ -46,6 +47,23 @@ jobs:
           version: '0.12.17'
       - name: Install locked dependencies
         run: uv sync --python python3.13 --frozen
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.23.3'
+          cache: npm
+          cache-dependency-path: assets/sopds-sass/package-lock.json
+      - name: Install and check locked static assets
+        working-directory: assets/sopds-sass
+        run: |
+          npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+          npm run check
+          npx playwright-core install chromium
+      - name: Check source syntax
+        run: |
+          .venv/bin/python scripts/check_python.py
+          .venv/bin/python scripts/check_vendor.py
+          node --check static/js/reader.js
+          node --check scripts/browser-smoke.mjs
       - name: Check Django configuration and migrations
         run: |
           .venv/bin/python manage.py check

@@ -1,0 +1,13 @@
+{% extends "sopds_main.html" %}
+{% block body %}
+<h1>Состояние библиотеки</h1>
+<p>Проверено: {{ report.checked_at }}</p>
+{% if report.warnings %}<div class="callout warning" role="status"><ul>{% for warning in report.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></div>{% else %}<p>Все проверки пройдены.</p>{% endif %}
+<table><thead><tr><th>Служба</th><th>Состояние</th><th>Последний сигнал</th><th>Последний успех</th><th>Ошибка</th></tr></thead>
+<tbody>{% for name, service in report.services.items %}<tr><td>{{ name }}</td><td>{{ service.status }}</td><td>{{ service.last_seen|default:'Нет' }}</td><td>{{ service.last_success|default:'Нет' }}</td><td>{{ service.last_error }}</td></tr>{% endfor %}</tbody></table>
+<p>Последнее успешное сканирование: {{ report.last_scan|default:'Нет' }}</p>
+<p>Свободно на диске приложения: {{ report.disk_free_bytes|filesizeformat }}</p>
+<h2>Аннотации</h2><ul>{% for status, count in report.annotations.counts.items %}<li>{{ status }}: {{ count }}</li>{% empty %}<li>Очередь пуста</li>{% endfor %}</ul>
+<p>Самое старое ожидающее задание: {{ report.annotations.oldest_pending|default:'Нет' }}. Истёкших блокировок: {{ report.annotations.expired_leases }}.</p>
+<p>Последняя проверенная резервная копия: {{ report.backup.completed_at|default:'Нет' }} {{ report.backup.name }}</p>
+{% endblock %}

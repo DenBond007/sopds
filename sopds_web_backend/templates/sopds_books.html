@@ -1,7 +1,8 @@
 {% extends "sopds_main.html" %}
-{% load i18n %}
+{% load i18n catalog_links %}
 
 {% block body %}
+{% include "sopds_filters.html" %}
 <script>
     function openCoverModal(link) {
         var img = $('#CoverModalImage');
@@ -110,8 +111,18 @@
         {% endif %}
     </div>
 
+    {% if user.is_authenticated %}
+    <form method="post" action="{% url 'web:reading_state' b.id %}">
+      {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <label>Мой список <select name="status" style="width:auto;display:inline-block">
+        {% for key, label in reading_choices %}<option value="{{ key }}"{% if b.reading_status == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select></label>
+      <button type="submit" class="button small">Сохранить</button>
+      {% if b.reading_status %}<button name="action" value="remove" class="button small secondary">Убрать из списка</button> {{ b.reading_percent }}%{% endif %}
+    </form>
+    {% endif %}
     <div class="large-12 column">
-        <table>
+        <table class="book-details">
         <tr>
             <td rowspan="6" width="130px" style="padding:0rem 0rem;">
                 <a href="{% url 'opds_catalog:cover' b.id %}" onclick="openCoverModal(this); return false;">
@@ -136,14 +147,14 @@
             {% trans "File size:" %} <b> {{ b.filesize|filesizeformat }} </b> <br>
             {% trans "Language:" %} <b> {{ b.lang }} </b> <br>
             {% if b.doubles > 0 %}
-                {% trans "Doubles for book:" %} <b> <a href="{% url "web:searchbooks" %}?searchtype=d&searchterms={
-{b.id}}">{{ b.title }} ( {{ b.doubles }} {% trans "itm." %} ) </b> </a>
+                {% trans "Doubles for book:" %} <b> <a href="{% url "web:searchbooks" %}?searchtype=d&searchterms={{b.id}}">{{ b.title }} ( {{ b.doubles }} {% trans "itm." %} ) </b> </a>
             {% endif %}
             </td>
             <td>
+                {% if b.format == 'fb2' %}{% if user.is_authenticated %}<a href="{% url 'web:reader' b.id %}">Продолжить чтение</a>{% else %}
                 <a href="#"onclick="openBookModal('{% url 'opds_catalog:view_html' b.id %}'); return false;">
                 <b><u>Полистать</u></b>
-                </a>
+                </a>{% endif %}{% endif %}
             </td>
         </tr>
         <tr>
@@ -182,13 +193,14 @@
         </tr>
 		</table>
     </div>
+{% empty %}<p role="status">Книги не найдены. Измените фильтры или выберите другой список.</p>
 {% endfor %}
 
 {% if paginator.num_pages > 1 %}
 <ul class="pagination" role="navigation" aria-label="Pagination">
   <li class="pagination-previous {% if not paginator.has_previous %}disabled{%endif%}">
       {% if paginator.has_previous %}
-	     <a href="{% url "web:searchbooks" %}?searchtype={{searchtype}}&searchterms={{searchterms}}&page={{paginator.previous_page_number}}"aria-label="Previous page">
+	     <a href="{% url "web:searchbooks" %}?{% page_query paginator.previous_page_number %}"aria-label="Previous page">
       {%endif%}
       {% trans "Previous page" %}
       {% if paginator.has_previous %}</a>{%endif%}
@@ -198,14 +210,14 @@
      {% if paginator.number == pn %}
         <li class="current">{{pn}}</li>
      {% else %}
-        <li><a href="{% url "web:searchbooks" %}?searchtype={{searchtype}}&searchterms={{searchterms}}&page={{pn}}" aria-label="Page {{pn}}">{{pn}}</a></li>
+        <li><a href="{% url "web:searchbooks" %}?{% page_query pn %}" aria-label="Page {{pn}}">{{pn}}</a></li>
      {% endif %}   
         {# <li class="ellipsis" aria-hidden="true"></li> #}
   {% endfor %}
   
   <li class="pagination-next" {% if not paginator.has_next %}disabled{%endif%}>
       {% if paginator.has_next %}
-	     <a href="{% url "web:searchbooks" %}?searchtype={{searchtype}}&searchterms={{searchterms}}&page={{paginator.next_page_number}}" aria-label="Next page">
+	     <a href="{% url "web:searchbooks" %}?{% page_query paginator.next_page_number %}" aria-label="Next page">
       {%endif%}
       {% trans "Next page" %}
       {% if paginator.has_next %}</a>{%endif%}

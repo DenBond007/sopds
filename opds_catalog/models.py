@@ -182,3 +182,29 @@ class Counter(models.Model):
     obj = models.Manager()
     objects = CounterManager()
     
+
+
+class ReadingState(models.Model):
+    STATUS_CHOICES = [('want', 'Хочу прочитать'), ('reading', 'Читаю'), ('read', 'Прочитано')]
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name='reading_states')
+    status = models.CharField(max_length=8, choices=STATUS_CHOICES, default='want')
+    position = models.PositiveSmallIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'book'], name='reading_user_book_unique'),
+            models.CheckConstraint(condition=models.Q(position__lte=10000), name='reading_position_bounded'),
+            models.CheckConstraint(condition=models.Q(status__in=['want', 'reading', 'read']), name='reading_status_valid'),
+        ]
+        indexes = [models.Index(fields=['user', 'status'], name='reading_user_status_idx')]
+
+
+class ServiceStatus(models.Model):
+    name = models.CharField(max_length=32, primary_key=True)
+    status = models.CharField(max_length=16, default='idle')
+    last_seen = models.DateTimeField(default=timezone.now)
+    last_success = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=160, blank=True)
+    details = models.JSONField(default=dict, blank=True)

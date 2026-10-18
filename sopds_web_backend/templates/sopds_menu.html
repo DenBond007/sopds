@@ -40,3 +40,8 @@
 	  </ul>
 	</div>
 {% endif %}
+
+<p><a href="{% url 'web:searchbooks' %}?searchtype=m">Поиск с фильтрами</a>
+{% if user.is_authenticated %} · <a href="{% url 'web:searchbooks' %}?searchtype=m&reading_status=want">Хочу прочитать</a> · <a href="{% url 'web:searchbooks' %}?searchtype=m&reading_status=reading">Читаю</a> · <a href="{% url 'web:searchbooks' %}?searchtype=m&reading_status=read">Прочитано</a>{% endif %}</p>
+
+{% if user.is_staff %}<p><a href="{% url 'web:operations' %}">Состояние библиотеки</a></p>{% endif %}

@@ -1,0 +1,27 @@
+<form method="get" action="{% url 'web:searchbooks' %}">
+  <input type="hidden" name="searchtype" value="m">
+  <fieldset><legend>Поиск и фильтры</legend>
+  <div class="row">
+    <label class="medium-6 columns">Название<input type="text" name="searchterms" maxlength="512" value="{{ searchterms }}"></label>
+    <label class="medium-6 columns">Автор<input type="text" name="author" maxlength="128" value="{{ filters.author }}"></label>
+    <label class="medium-4 columns">Серия<input type="text" name="series" maxlength="128" value="{{ filters.series }}"></label>
+    <label class="medium-4 columns">Язык<input type="text" name="language" maxlength="128" placeholder="en / Английский" value="{{ filters.language }}"></label>
+    <label class="medium-4 columns">Формат<select name="format">
+      <option value="">Все форматы</option>
+      <option value="fb2"{% if filters.format == 'fb2' %} selected{% endif %}>FB2</option>
+      <option value="epub"{% if filters.format == 'epub' %} selected{% endif %}>EPUB</option>
+      <option value="mobi"{% if filters.format == 'mobi' %} selected{% endif %}>MOBI</option>
+      <option value="pdf"{% if filters.format == 'pdf' %} selected{% endif %}>PDF</option>
+      <option value="djvu"{% if filters.format == 'djvu' %} selected{% endif %}>DJVU</option>
+    </select></label>
+    <label class="medium-6 columns">Жанр<select name="genre"><option value="">Все жанры</option>
+      {% for genre in filter_genres %}<option value="{{ genre.id }}"{% if filters.genre == genre.id|stringformat:'s' %} selected{% endif %}>{{ genre.subsection }}</option>{% endfor %}
+    </select></label>
+    {% if user.is_authenticated %}<label class="medium-6 columns">Мои списки<select name="reading_status">
+      <option value="">Все книги</option>{% for key, label in reading_choices %}<option value="{{ key }}"{% if filters.reading_status == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>{% endif %}
+  </div>
+  <button class="button" type="submit">Найти</button>
+  <a href="{% url 'web:searchbooks' %}?searchtype=m">Сбросить фильтры</a>
+  </fieldset>
+</form>

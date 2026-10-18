@@ -13,7 +13,7 @@ from django.db.models import Count, Min
 
 from opds_catalog.models import Book, Catalog, Author, Genre, Series, bookshelf, Counter, lang_menu
 from opds_catalog.annotations import annotation_text, enqueue_visible_ids
-from opds_catalog.book_queries import books_in_series
+from opds_catalog.book_queries import books_in_series, apply_book_filters, title_search, trailing_duplicate_count
 from opds_catalog import models
 from opds_catalog.prefix_query import prefix_groups
 from opds_catalog import settings
@@ -413,11 +413,11 @@ class SearchBooksFeed(AuthFeed):
         # Поиск книг по подсроке
         if  searchtype == 'm':
             #books = Book.objects.extra(where=["upper(title) like %s"], params=["%%%s%%"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title__contains=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
+            books = title_search(searchterms)
         # Поиск книг по начальной подстроке
         elif searchtype == 'b':
             #books = Book.objects.extra(where=["upper(title) like %s"], params=["%s%%"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title__startswith=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
+            books = title_search(searchterms, 'startswith')
         # Поиск книг по точному совпадению наименования
         elif searchtype == 'e':
             #books = Book.objects.extra(where=["upper(title)=%s"], params=["%s"%searchterms.upper()]).order_by('title','-docdate')
@@ -426,14 +426,14 @@ class SearchBooksFeed(AuthFeed):
         elif searchtype == 'a':
             try:
                 author_id = int(searchterms)
-            except:
+            except (ValueError, TypeError):
                 author_id = 0
             books = Book.objects.filter(authors=author_id).distinct().order_by('search_title', '-docdate', 'pk')
         # Поиск книг по серии
         elif searchtype == 's':
             try:
                 ser_id = int(searchterms)
-            except:
+            except (ValueError, TypeError):
                 ser_id = 0
             #books = Book.objects.filter(series=ser_id).order_by('search_title','-docdate')
             books = books_in_series(ser_id)
@@ -442,7 +442,7 @@ class SearchBooksFeed(AuthFeed):
             try:
                 ser_id = int(searchterms0)
                 author_id = int(searchterms)
-            except:
+            except (ValueError, TypeError):
                 ser_id = 0
                 author_id = 0 
             books = books_in_series(ser_id if ser_id else None, author_id=author_id)
@@ -450,7 +450,7 @@ class SearchBooksFeed(AuthFeed):
         elif searchtype == 'g':
             try:
                 genre_id = int(searchterms)
-            except:
+            except (ValueError, TypeError):
                 genre_id = 0
             books = Book.objects.filter(genres=genre_id).distinct().order_by('search_title', '-docdate', 'pk')
         # Поиск книг на книжной полке            
@@ -465,6 +465,8 @@ class SearchBooksFeed(AuthFeed):
             mbook = get_object_or_404(Book, pk=book_id)
             books = Book.objects.filter(title__iexact=mbook.title, authors__in=mbook.authors.all()).exclude(id=book_id).distinct().order_by('search_title', '-docdate', 'pk')
                     
+        if request is not None:
+            books = apply_book_filters(books, request.GET, request.user)
         books_for_neighbors = books
         books = books.prefetch_related('authors', 'genres', 'series', 'bseries_set')
                  
@@ -508,14 +510,10 @@ class SearchBooksFeed(AuthFeed):
                 
         # "вытягиваем" дубликаты книг со следующей страницы и удаляем первый элемент который с предыдущей страницы и "вытягивал" дубликаты с текущей
         if summary_DOUBLES_HIDE:
-            double_flag = True
-            while ((finish+1)<books_count) and double_flag:
-                finish += 1  
-                if books_for_neighbors[finish].title.upper()==prev_title.upper() and {a['id'] for a in books_for_neighbors[finish].authors.values()}==prev_authors_set:
-                    items[-1]['doubles']+=1
-                else:
-                    double_flag = False   
-            
+            if items and finish + 1 < books_count:
+                items[-1]['doubles'] += trailing_duplicate_count(
+                    books_for_neighbors, finish + 1, prev_title, prev_authors_set)
+
             if op.d1_first_pos!=0:     
                 items.pop(0)          
                   
@@ -536,12 +534,16 @@ class SearchBooksFeed(AuthFeed):
         if obj["paginator"]["has_previous"]:
             kwargs["page"]=obj["paginator"]['previous_page_number']
             prev_url = reverse("opds_catalog:searchbooks", kwargs=kwargs)
+            if self.request.GET:
+                prev_url += "?" + self.request.GET.urlencode()
         else:
             prev_url  = None
 
         if obj["paginator"]["has_next"]:
             kwargs["page"]=obj["paginator"]['next_page_number']
             next_url = reverse("opds_catalog:searchbooks", kwargs=kwargs)
+            if self.request.GET:
+                next_url += "?" + self.request.GET.urlencode()
         else:
             next_url  = None
         return {
@@ -616,7 +618,7 @@ class SelectSeriesFeed(AuthFeed):
     def get_object(self, request, searchtype, searchterms):
         try:
             author_id=int(searchterms)
-        except:
+        except (ValueError, TypeError):
             author_id = 0
         return author_id
     
@@ -750,7 +752,7 @@ class SearchSeriesFeed(AuthFeed):
         elif searchtype == 'a':
             try:
                 self.author_id = int(searchterms)
-            except:
+            except (ValueError, TypeError):
                 self.author_id = None
             series = Series.objects.filter(book__authors=self.author_id)
             

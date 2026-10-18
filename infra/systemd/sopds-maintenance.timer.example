@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily SOPDS backup with restore verification
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Europe/Moscow
+Persistent=true
+RandomizedDelaySec=300
+Unit=sopds-maintenance.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+{
+  "constance": {
+    "sha256": "a1c58e8282ba10eeda25075ee2ac5bb7e4ba2a6944b44a438b2c291fe01fe7ab",
+    "files": 52
+  },
+  "legacy-zip": {
+    "sha256": "ea4b4f6d3080516fc88be2e8657a84b178a93e2651ad7f1dd769c38178ce3049",
+    "files": 1
+  },
+  "frontend-vendor": {
+    "sha256": "5bef5b55e2a073d74442ddd33d31f87f30aef39de118be76035ce5012e0f65b0",
+    "files": 8
+  }
+}

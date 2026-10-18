@@ -1,48 +1,29 @@
-# Foundation for Sites Template
+# Сборка SOPDS CSS
 
-**Please open all issues with this template on the main [Foundation for Sites](https://github.com/zurb/foundation-sites/issues) repo.**
+Из корня проекта (Node 22.23.3):
 
-This is the basic starter project for [Foundation for Sites 6](http://foundation.zurb.com/sites). It includes a Sass compiler and a starter HTML file for you.
-
-## Installation
-
-To use this template, your computer needs:
-
-- [NodeJS](https://nodejs.org/en/) (0.12 or greater)
-- [Git](https://git-scm.com/)
-
-This template can be installed with the Foundation CLI, or downloaded and set up manually.
-
-### Using the CLI
-
-Install the Foundation CLI with this command:
-
-```bash
-npm install foundation-cli --global
+```sh
+npm --prefix assets/sopds-sass ci --ignore-scripts --omit=optional --no-audit --no-fund
+npm --prefix assets/sopds-sass run build
+npm --prefix assets/sopds-sass run check
 ```
 
-Use this command to set up a blank Foundation for Sites project with this template:
+Dart Sass закреплён lock-файлом. Выход синхронно записывается в `static/css/sopds.css`
+и `sopds_web_backend/static/css/sopds.css`; Django использует первый файл.
+Вторая команда `check` компилирует в памяти и отклоняет несвежий CSS.
+Foundation 6.2.4 соответствует фактически поставляемому JS; старый Bower-файл
+ошибочно указывал 6.1.2. Gulp/Bower перенесены в `docs/legacy`.
 
-```bash
-foundation new --framework sites --template basic
+Браузерные проверки используют playwright-core и локальный Chromium/Chrome:
+
+```sh
+# После настройки отдельной dev PostgreSQL, только одноразовая test-БД:
+DB_NAME=sopds_m08 SOPDS_BROWSER_TESTS=1 SOPDS_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
+  .venv/bin/python manage.py test opds_catalog.tests.test_browser --noinput
 ```
 
-The CLI will prompt you to give your project a name. The template will be downloaded into a folder with this name.
-
-### Manual Setup
-
-To manually set up the template, first download it with Git:
-
-```bash
-git clone https://github.com/zurb/foundation-sites-template projectname
-```
-
-Then open the folder in your command line, and install the needed dependencies:
-
-```bash
-cd projectname
-npm install
-bower install
-```
-
-Finally, run `npm start` to run the Sass compiler. It will re-run every time you save a Sass file.
+В CI браузер устанавливается `npx playwright-core install chromium`; тест сам
+создаёт пользователя/книги и поднимает временный HTTP-сервер. Настоящие учётные
+данные и рабочая библиотека не нужны. Системные пакеты не устанавливаются агентом.
+[Документация Sass](https://sass-lang.com/documentation/js-api/),
+[документация Playwright](https://playwright.dev/docs/browsers).

@@ -9,6 +9,8 @@ class ScanMetadataMigrationTests(TransactionTestCase):
     new = ('opds_catalog', '0006_bookshelf_user_book_unique')
 
     def test_existing_book_and_shelf_keep_ids(self):
+        self.addCleanup(lambda: MigrationExecutor(connection).migrate(
+            MigrationExecutor(connection).loader.graph.leaf_nodes()))
         executor = MigrationExecutor(connection)
         executor.migrate([self.old])
         try:
@@ -83,6 +85,8 @@ class BookshelfUniquenessMigrationTests(TransactionTestCase):
     new = ('opds_catalog', '0006_bookshelf_user_book_unique')
 
     def test_duplicate_preflight_preserves_every_shelf_and_rolls_back_migration(self):
+        self.addCleanup(lambda: MigrationExecutor(connection).migrate(
+            MigrationExecutor(connection).loader.graph.leaf_nodes()))
         executor = MigrationExecutor(connection)
         executor.migrate([self.old])
         apps = executor.loader.project_state([self.old]).apps
@@ -110,3 +114,35 @@ class BookshelfUniquenessMigrationTests(TransactionTestCase):
             injected_duplicate.delete()
             MigrationExecutor(connection).migrate([self.new])
         self.assertEqual(list(Shelf.objects.values()), before[:1])
+
+
+class ReadingMigrationTests(TransactionTestCase):
+    def test_additive_migration_preserves_existing_rows(self):
+        self.addCleanup(lambda: MigrationExecutor(connection).migrate(
+            MigrationExecutor(connection).loader.graph.leaf_nodes()))
+        old = ('opds_catalog', '0006_bookshelf_user_book_unique')
+        new = ('opds_catalog', '0007_reading_and_service_status')
+        executor = MigrationExecutor(connection)
+        executor.migrate([old])
+        apps = executor.loader.project_state([old]).apps
+        Book = apps.get_model('opds_catalog', 'Book')
+        Catalog = apps.get_model('opds_catalog', 'Catalog')
+        Shelf = apps.get_model('opds_catalog', 'bookshelf')
+        Task = apps.get_model('opds_catalog', 'AnnotationTask')
+        user = get_user_model().objects.create_user('reading_migration_probe')
+        catalog = Catalog.objects.create(cat_name='.', path='.')
+        book = Book.objects.create(catalog=catalog, filename='probe.fb2', path='.',
+            title='Probe', search_title='PROBE', format='fb2', annotation='Preserved', avail=2)
+        shelf = Shelf.objects.create(user_id=user.pk, book_id=book.pk)
+        Task.objects.create(book_id=book.pk, status='ready', source_fingerprint='preserve-this')
+        before = {name:list(model.objects.order_by('pk').values())
+                  for name,model in [('Book',Book),('bookshelf',Shelf),('AnnotationTask',Task)]}
+        executor = MigrationExecutor(connection)
+        executor.migrate([new])
+        apps = executor.loader.project_state([new]).apps
+        for name, rows in before.items():
+            self.assertEqual(list(apps.get_model('opds_catalog',name).objects.order_by('pk').values()), rows)
+        Reading = apps.get_model('opds_catalog','ReadingState')
+        row = Reading.objects.create(user_id=user.pk, book_id=book.pk, status='reading', position=4321)
+        self.assertEqual((row.user_id,row.book_id,row.position),(user.pk,book.pk,4321))
+        self.assertEqual(Shelf.objects.get(pk=shelf.pk).readtime,shelf.readtime)

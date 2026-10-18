@@ -237,3 +237,9 @@ CONSTANCE_CONFIG_FIELDSETS = {
     '6. Converters Options': ('SOPDS_FB2TOEPUB', 'SOPDS_FB2TOMOBI', 'SOPDS_TEMP_DIR'),
     '7. Log & PID Files': ('SOPDS_SERVER_LOG', 'SOPDS_SCANNER_LOG', 'SOPDS_TELEBOT_LOG','SOPDS_SERVER_PID','SOPDS_SCANNER_PID','SOPDS_TELEBOT_PID'),
 }
+
+# Host and container operators can mount the same private backup directory read-only.
+SOPDS_BACKUP_DIR = os.environ.get('SOPDS_BACKUP_DIR', os.path.join(BASE_DIR, '.local', 'backups'))
+SOPDS_MIN_FREE_BYTES = int(os.environ.get('SOPDS_MIN_FREE_BYTES', str(1024 ** 3)))
+
+SOPDS_BACKUP_STATUS_FILE = os.environ.get('SOPDS_BACKUP_STATUS_FILE', '')

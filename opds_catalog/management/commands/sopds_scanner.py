@@ -13,6 +13,7 @@ from django.db import connection
 from django.conf import settings as main_settings
 
 from opds_catalog.models import Counter
+from opds_catalog.health import record_service
 from opds_catalog.sopdscan import opdsScanner
 #from opds_catalog.settings import SCANNER_LOG, SCAN_SHED_DAY, SCAN_SHED_DOW, SCAN_SHED_HOUR, SCAN_SHED_MIN, LOGLEVEL, SCANNER_PID
 from opds_catalog import settings 
@@ -91,9 +92,21 @@ class Command(BaseCommand):
                 self.stdout.write('Another scan process is active. Skip current job.')
                 return
 
+            record_service('scanner', 'running')
             scanner = opdsScanner(self.logger)
             scanner.scan_all()
             Counter.objects.update_known_counters()
+            details = {key: getattr(scanner, key, 0) for key in (
+                'books_added', 'books_updated', 'books_skipped', 'bad_books', 'bad_archives')}
+            degraded = details['bad_books'] or details['bad_archives']
+            record_service('scanner', 'degraded' if degraded else 'idle', success=True, details=details)
+        except BaseException as error:
+            if lock_acquired:
+                try:
+                    record_service('scanner', 'error', error=type(error).__name__)
+                except Exception:
+                    self.logger.exception('Could not record scanner failure')
+            raise
         finally:
             try:
                 if lock_acquired:
@@ -115,6 +128,7 @@ class Command(BaseCommand):
             return
         if connection.connection and not connection.is_usable():
             connection.close()
+        record_service('scanner')
         settings.constance_update_all()
         if not (self.SCAN_SHED_MIN==config.SOPDS_SCAN_SHED_MIN and \
            self.SCAN_SHED_HOUR==config.SOPDS_SCAN_SHED_HOUR and \
@@ -154,6 +168,7 @@ class Command(BaseCommand):
             try:
                 for signum in (signal.SIGTERM, signal.SIGINT):
                     previous[signum] = signal.signal(signum, request_stop)
+                record_service('scanner', 'idle')
                 self.stdout.write('Scanner ready; SIGTERM/SIGINT finish the active scan.')
                 self.sched.start()
             except (StopScheduler, KeyboardInterrupt):

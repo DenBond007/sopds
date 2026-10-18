@@ -71,3 +71,21 @@
   a:hover { background-color: $sopds-menu-bg-hover-color; } 
   color : $sopds-menu-color;
 }
+
+// Personal library cards remain readable on narrow screens.
+@media screen and (max-width: 39.9375em) {
+  table.book-details, table.book-details tbody, table.book-details tr {
+    display: block;
+    width: 100%;
+  }
+  table.book-details td {
+    display: block;
+    width: 100%;
+    padding: .5rem !important;
+  }
+  table.book-details img {
+    width: auto !important;
+    max-width: 100%;
+    max-height: 180px;
+  }
+}

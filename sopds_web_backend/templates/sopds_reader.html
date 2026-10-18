@@ -1,0 +1,13 @@
+{% extends "sopds_main.html" %}
+{% load static %}
+{% block body %}
+<h1>{{ book.title }}</h1>
+<p id="reading-message" role="status" aria-live="polite">Загрузка книги…</p>
+<form hidden>{% csrf_token %}</form>
+<iframe id="reading-frame" title="{{ book.title }}" sandbox="allow-same-origin"
+    src="{% url 'web:reader_document' book.id %}"
+    data-state-url="{% url 'web:reading_state' book.id %}"
+    style="width:100%;height:78vh;border:1px solid #ddd"></iframe>
+<p>Позиция сохраняется после прокрутки. Для продолжения откройте книгу с того же аккаунта.</p>
+{% endblock %}
+{% block block-js %}<script src="{% static 'js/reader.js' %}" defer></script>{% endblock %}

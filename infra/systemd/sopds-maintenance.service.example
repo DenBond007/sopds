@@ -1,0 +1,10 @@
+[Unit]
+Description=SOPDS verified backup and session maintenance
+
+[Service]
+Type=oneshot
+WorkingDirectory=/path/to/sopds
+ExecStart=/usr/bin/python3 /path/to/sopds/scripts/ops/maintenance.py --env-file /path/to/sopds/.local/container.env --backup-dir /path/to/sopds/.local/backups --amd64
+UMask=0077
+TimeoutStartSec=1800
+Nice=10

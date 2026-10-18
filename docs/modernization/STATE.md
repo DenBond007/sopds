@@ -1,40 +1,28 @@
 # Текущее состояние
 
-- Статус: M00–M05 и локальный M07 linux/amd64 завершены с записанными ограничениями; M06 ждёт удалённого CI и внешних проверок.
-- Текущая задача: M07.2/M07.2a/M07.2b done — сборка и контейнерная проверка выполнены. Все пять контейнеров остановлены с exit 0, образы/тома сохранены; нативный probe 8443 сохранён.
-- Ветка: `modernization/sopds`; опубликованная база до текущих изменений — `daa2ab5`, код M06.8–M06.11 — `6f8806a`. Точный текущий HEAD сверять с Git.
-- Полномочия: пользователь явно разрешил сборку образов и контейнерную проверку M07.2, включая Docker daemon для отдельного sopds-container. Без sudo/root на хосте, посторонних контейнеров и production. Push/PR/merge и постоянное развёртывание отдельно не разрешены.
-- Sandbox: обычные команды ломаются с `bubblewrap: mountinfo path is not absolute`; пользователь явно разрешил штатные запросы вне sandbox. Этот путь работает; Docker daemon использован по новому поручению M07.2. Системные пакеты/sudo/root на хосте не использовались.
-- Целевой стек: Python 3.13 / Django 5.2 LTS / PostgreSQL 17, uv/lock. Новое решение пользователя: Docker — целевое размещение приложения; текущий нативный Ubuntu-стенд остаётся для читалки. Системный Python не менять.
-- Установка новая; прежняя рабочая БД не переносится. Legacy-запуск Python 3.7 пропущен пользователем, исходные тесты неизвестны; не восстанавливать автоматически.
-- M01–M05 и M06.6: SQL/shell/path-защита, сохранность scan/ID/полок, advisory lock, потоковая выдача, ограничения парсеров, очередь аннотаций, авторизация/CSRF/XSS, пагинация и preview проверены. История — PLAN/baseline/candidate.
-- M06.9/M06.11: уникальность полок (0006), однозначная сортировка, SQL полки 9→1 и чтение настроек 72→11/71→10; прежний итог 174/174 подтверждён логами.
-- M06.13: `infra/gunicorn.conf.py` — два sync-worker, timeout/graceful timeout 330 с, конвертер 300 с. При SystemExit рабочего процесса группа конвертера останавливается и очищается.
-- Проверки M06.13: 16/16 адресных, 179/179 общих; реальная конвертация 32 с, медленное скачивание 8 МиБ с SHA-256, параллельный каталог, SIGABRT worker и штатный SIGTERM master. Check/migrations/Gunicorn config/diff прошли.
-- M06.14: foreground `sopds_scanner run`, SIGTERM/SIGINT ждут текущий scan; расписание/advisory lock сохранены. Legacy stop/restart используют время старта и pidfd; старый числовой PID-файл отклоняется без сигнала, файлы закрыты flock и 0600.
-- Проверки M06.14: 33/33 адресных теста; два цикла запуска/остановки во время scan сохраняют ID/readtime/полки. Три шаблона `infra/systemd/*.service.example` проверены systemd-analyze; постоянные службы не установлены.
-- M06.3a: удалённый запуск 36247804690 на daa2ab5 упал с KeyError TIME_ZONE. В test-only workflow добавлено TIME_ZONE=UTC.
-- Чистый локальный CI: frozen/offline sync, check, makemigrations и 182/182 теста за 87.662 с — exit 0; отдельные CI/test-БД созданы и удалены. Логи — `.local/logs/m06-ci-local-*.log`.
-- M06.3 `blocked`: требуется разрешить push конкретного проверенного коммита, затем сохранить ссылку и итог нового GitHub Actions. Старый запуск: https://github.com/DenBond007/sopds/actions/runs/36247804690 .
-- M06.15: probe первоначально был остановлен, 3 искусственные книги/1 полка, схема 0005, без клиентов и дублей. Backup сохранён в `.local/backups/m06-probe-before-upgrade-vevduw5e` с приватными правами.
-- Backup БД восстановлен в новую копию; хеши всех строк до/после 0006 совпали. Копия удалена. В probe применена 0006 и подтверждена сохранность всех строк до HTTP smoke. Исходные файлы искусственной библиотеки не менялись.
-- Временный HTTPS снова активен: https://192.168.88.44:8443/opds/ . User units `sopds-m06-caddy.service` / `sopds-m06-gunicorn.service`; Gunicorn только 127.0.0.1:8000 и новая конфигурация. Enable/linger не выполнялись.
-- Изоляция: БД `sopds_m06_https_probe_20260925`, библиотека `.local/https-probe/library`. Dev-БД и production не мигрировались.
-- HTTPS smoke: проверены CA/IP без обхода TLS, 401 для анонимного/повреждённого Basic, 200 для авторизованного OPDS, поиска/аннотации, точные байты download, preview CSP/SAMEORIGIN, отдельный CSRF web-login, admin Constance и static.
-- Private deploy check — только намеренный W004; collectstatic прошёл. HSTS выключен до подтверждения доверия CA на физическом устройстве.
-- CA для читалки: `.local/https-probe/data/caddy/pki/authorities/local/root.crt`; приватные ключи не передавать. Вход `sopds_admin`, пароль только в `.local/https-probe/initial-admin.credentials` (0600), не выводить. Для постоянного чтения нужен обычный пользователь.
-- M06.4/M06.5d `blocked`: результат реальной читалки с другого LAN-устройства запрошен; нет названия/версии и подтверждения доверия CA, поиска, карточки, скачивания. Перезагрузка, постоянный запуск и выбор 443/8443 также не проверены.
-- M07.1: pinned Python/uv/PostgreSQL/Caddy, foreground-сервисы, manage/init, non-root/read-only. Проект sopds-container; инструкция — docker.md.
-- M07.2 (2026-09-27): app/Caddy build прошёл на linux/amd64. Docker Hub multiarch pull зависал; проверен и загружен точный amd64 digest из закреплённого index. Воспроизводимый override — infra/docker/compose.amd64.yaml, требует предварительного pull. Arm64 не проверен.
-- Контур: 192.168.88.44:9444, отдельные тома/БД sopds, .local/container-library с 3 искусственными книгами и тестовой полкой. 9443 занят Portainer и не менялся.
-- Исправление TLS/IP: default_sni для клиентов без SNI за Docker NAT; Caddy получил TLS/CA/IP healthcheck. Лог одноразового scan настроен в /tmp/sopds-scanner.log.
-- Container smoke: миграции/static, 401/200, OPDS/search, SHA256 download, preview/CSP, INPX worker, CSRF 403/вход/admin/static прошли. Большая книга >8 МиБ и параллельный каталог проверены.
-- Общие тесты внутри app image: 182/182 за 118.011 с. Тестовые mounts только у runner; временная CREATEDB-роль и test-БД удалены. Runtime sopds без elevated DB privileges.
-- Scanner SIGTERM ждёт активный scan; ID/полки/readtime сохраняются. Web и Caddy завершают HTTPS-preview с искусственной задержкой 32 с (33.2 с); тестовые mounts сняты, исходный быстрый preview проверен.
-- Restart всех пяти служб сохранил хеши строк всех таблиц и CA; повторный migrate ничего не изменил. Backup восстановлен в отдельную БД с полным совпадением; копия удалена. Библиотека и её архив совпадают с исходными SHA256.
-- Backup: .local/backups/m07-container-20260927 (0700/0600). Env и вход: .local/container.env / .local/m07/credentials.json (0600), не выводить. Публичный CA: .local/m07/root.crt.
-- Итоговая проверка: db/web/caddy healthy, все 5 сервисов non-root/cap_drop/no-new-privileges, единственный опубликованный порт 9444, нет лишних mounts/рестартов. Deploy check — только намеренный W004.
-- Docker-контур остановлен: все 5 служб exit 0, образы и тома сохранены; повторный запуск — по docker.md через compose.amd64.yaml, без повторной инициализации. Постоянный запуск/reboot не проверены.
-- Нативный стенд после завершения: обе user-службы active, HTTPS/CA на 8443 даёт ожидаемый 401; Portainer на 9443 работает.
-- Подробности — docker.md / m06-runtime.md, команды и логи — baseline.md; .local/logs/m07-*.log. Посторонний ._sopds-codex-start.zip не трогать.
-- Следующий шаг: результат читалки на сохранённом нативном стенде (M06.4) и разрешение на публикацию локальных коммитов для удалённого CI (M06.3). Постоянное Docker-размещение и reboot — отдельный следующий этап.
+- Задача: M08 — выполнить все рекомендации анализа по поручению пользователя 2026-10-18.
+- Ветка: `codex/library-operations`, исходный HEAD `b21543e`; итоговый локальный commit готовится; push/CI требуют явного подтверждения после auto-review rejection.
+- M08.1–M08.5 done; M08.6 in_progress: публикация отдельной проверенной ветки для CI и итоговая фиксация.
+- Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
+- Реализованы: корректные ссылки и stateless Basic; совместные web/OPDS фильтры; отдельные личные списки; FB2 reader с серверной позицией; staff-only operations.
+- 0007 добавляет ReadingState/ServiceStatus; constraints уникальности/позиции. Старые модели не меняются.
+- Проверки: 24 адресных links/auth, 39 features/SQL/migrations, 22 browser/scanner/retention; OK.
+- Полный набор: 200/200 за 85.315 с, включая настоящий Chromium desktop/mobile, CSRF и scroll save/restore. Дополнительные 2 теста schedule и 1 retention — OK.
+- Первый общий прогон нашёл guard для Feed.get_object(None); исправлен, 7 адресных и повторный полный набор прошли.
+- Benchmark: 100000 синтетических книг, 7 повторов; OFFSET median 14.576 мс, PK-range 0.626 мс; substring 14.889 мс; 300 duplicate rows 301→4 SQL. Данные откатились, отдельная БД удалена.
+- Сопровождение: npm-lock/Dart Sass; Gulp/Bower в legacy; fingerprint vendored-компонентов; test-only CI с браузером, синтаксисом, CSS и миграциями; monthly Dependabot uv/npm/Actions.
+- Docker: проверенный app image теперь sopds-app:local; db/web/scanner/annotations/caddy работают на 192.168.88.44:9444, библиотека только .local/container-library read-only, отдельные тома/БД. Production не использовался.
+- HTTPS legacy smoke: CA/IP без bypass, 401/200, поиск, точные download, large/parallel download, preview, INPX worker, CSRF/admin/static — OK.
+- HTTPS M08 smoke: обычный читатель, Basic без sessions, web login/CSRF, списки/позиция, reader CSP, staff access — OK.
+- Пользователь `sopds_reader` обычный, credentials только .local/m08/reader.json (0600); не выводить. CA для читалки .local/m07/root.crt.
+- После долгого простоя Caddy столкнулся с race storage cleanup/renewal expired leaf; штатный restart выпустил новый leaf прежним CA. TLS healthcheck healthy; CA/ключи/тома не удалялись.
+- Backup до 0007: .local/backups/sopds-20261018T084959Z-2a9aa62e; после: sopds-20261018T090156Z-21becc14. 0700/0600, каждый полностью восстановлен в новой БД с совпадением всех таблиц; временные БД удалены.
+- Migration integrity: все старые прикладные строки совпали; +2 content types/+8 permissions/+1 migration ожидаемы. 8 истёкших sessions удалены maintenance.
+- Диагностика образа healthy=true, очередь ready=1, ошибок нет, свободно около 24 ГБ. Разделённая backup-status сводка доступна app без доступа к закрытым копиям.
+- Расписание: существующий user cron, проверка каждые 15 минут, один полный backup после 03:30 Europe/Moscow, retry не чаще часа, flock, retention 7; чужие jobs сохранены. Docker/cron active, Linger=no, root/sudo не использовались.
+- Нативный probe: transient user units фактически not-found и 8443 закрыт; его файлы/данные сохранены. Для физической читалки использовать Docker 9444.
+- Внешнее: ответ о названии/версии читалки запрошен; её CA/search/download и полный reboot хоста не проверены. HSTS пока выключен. ARM64 не проверен.
+- Нативная dev-БД не мигрировалась. Общие тесты создавали и удаляли только test_sopds_m08; benchmark — только sopds_bench_m08_20261018.
+- Посторонний ._sopds-codex-start.zip не трогать. Локальные env, credentials, backup и книги не коммитить.
+- Публикация: автоматическая проверка отклонила commit+push в DenBond007/sopds из-за отсутствия отдельного согласия на точные payload/destination; вопрос задан. Другой путь отправки не используется.
+- Следующий шаг: commit собственных проверенных файлов, push codex/library-operations, результат удалённого CI; итоговый backup с image ID/commit, финальные health/расписание. Детали — m08-library-operations.md.

@@ -53,7 +53,7 @@ class BasicAuthMiddleware(object):
         user = auth.authenticate(username=username, password=password)
         if user and user.is_active:
             request.user = user
-            auth.login(request, user)
+            # Basic credentials authenticate this request without creating a browser session.
             return request
 
         return self.unauthed()

@@ -1,10 +1,14 @@
 
 from django.urls import re_path as url
-from sopds_web_backend import views
+from sopds_web_backend import views, library
 
 app_name='opds_web_backend'
 
 urlpatterns = [
+    url(r'^operations/$', library.operations, name='operations'),
+    url(r'^reading/(?P<book_id>\d+)/$', library.reading_state, name='reading_state'),
+    url(r'^read/(?P<book_id>\d+)/$', library.reader, name='reader'),
+    url(r'^read/(?P<book_id>\d+)/document/$', library.reader_document, name='reader_document'),
     url(r'^annotations/$', views.AnnotationStatusView, name='annotations'),
     url(r'^search/books/$',views.SearchBooksView, name='searchbooks'),
     url(r'^search/authors/$',views.SearchAuthorsView, name='searchauthors'),

@@ -17,6 +17,7 @@ x-app: &app
     SOPDS_SECRET_KEY: ${SOPDS_SECRET_KEY:?Set SOPDS_SECRET_KEY in a private env file}
     SOPDS_PRIVATE_HOST: ${SOPDS_PRIVATE_HOST:?Set the LAN IPv4 address}
     SOPDS_STATIC_ROOT: /srv/static
+    SOPDS_BACKUP_STATUS_FILE: /backup-status/latest.json
     TIME_ZONE: ${TIME_ZONE:-UTC}
     DB_NAME: sopds
     DB_USER: sopds
@@ -27,6 +28,12 @@ x-app: &app
     - type: bind
       source: ${SOPDS_LIBRARY:?Set an absolute path to the separate test library}
       target: /library
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ${SOPDS_BACKUP_STATUS_DIR:-../../.local/backup-status}
+      target: /backup-status
       read_only: true
       bind:
         create_host_path: false
@@ -108,6 +115,12 @@ services:
       - type: bind
         source: ${SOPDS_LIBRARY:?Set an absolute path to the separate test library}
         target: /library
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${SOPDS_BACKUP_STATUS_DIR:-../../.local/backup-status}
+        target: /backup-status
         read_only: true
         bind:
           create_host_path: false

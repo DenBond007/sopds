@@ -3,7 +3,7 @@ from random import randint
 from django.shortcuts import render, redirect, get_object_or_404
 from django.core.exceptions import BadRequest
 from django.template.context_processors import csrf
-from django.db.models import Count, Min
+from django.db.models import Count, Min, Max
 from django.utils.translation import gettext as _
 from django.contrib.auth import authenticate, login, logout, REDIRECT_FIELD_NAME
 from django.contrib.auth.decorators import user_passes_test
@@ -18,11 +18,11 @@ from django.http import HttpResponseBadRequest, HttpResponseForbidden
 
 from opds_catalog import models
 from opds_catalog.annotations import annotation_text, enqueue_visible_ids
-from opds_catalog.book_queries import books_in_series
+from opds_catalog.book_queries import books_in_series, apply_book_filters, title_search, trailing_duplicate_count
 from opds_catalog.opdsdb import CAT_INP
 from opds_catalog.prefix_query import prefix_groups
 from opds_catalog.request_params import integer_parameter
-from opds_catalog.models import AnnotationTask, Book, Author, Series, bookshelf, Counter, Catalog, Genre, lang_menu
+from opds_catalog.models import ReadingState, AnnotationTask, Book, Author, Series, bookshelf, Counter, Catalog, Genre, lang_menu
 from opds_catalog import settings
 from constance import config
 from opds_catalog.opds_paginator import Paginator as OPDS_Paginator
@@ -67,8 +67,14 @@ def sopds_processor(request):
         
     books_count = Counter.objects.get_counter(models.counter_allbooks)
     if books_count and (not auth_enabled or request.user.is_authenticated):
-        random_id = randint(1,books_count)
-        random_book = Book.objects.order_by('pk')[random_id-1:random_id].first()
+        bounds = Book.objects.aggregate(first=Min('pk'), last=Max('pk'))
+        if bounds['first'] is not None:
+            pivot = randint(bounds['first'], bounds['last'])
+            random_book = Book.objects.filter(pk__gte=pivot).order_by('pk').first()
+            if random_book is None:
+                random_book = Book.objects.order_by('pk').first()
+        else:
+            random_book = None
     else:
         random_book= None
     if random_book:
@@ -125,13 +131,13 @@ def SearchBooksView(request):
         
         if searchtype == 'm':
             #books = Book.objects.extra(where=["upper(title) like %s"], params=["%%%s%%"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title__contains=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
+            books = title_search(searchterms)
             args['breadcrumbs'] = [_('Books'),_('Поиск по названию'),searchterms]
             args['searchobject'] = 'title'
             
         if searchtype == 'b':
             #books = Book.objects.extra(where=["upper(title) like %s"], params=["%s%%"%searchterms.upper()]).order_by('title','-docdate')
-            books = Book.objects.filter(search_title__startswith=searchterms.upper()).order_by('search_title', '-docdate', 'pk')
+            books = title_search(searchterms, 'startswith')
             args['breadcrumbs'] = [_('Books'),_('Поиск по названию'),searchterms]   
             args['searchobject'] = 'title'         
             
@@ -141,7 +147,7 @@ def SearchBooksView(request):
                 author = Author.objects.get(id=author_id)
                 #aname = "%s %s"%(author.last_name,author.first_name)
                 aname = author.full_name
-            except:
+            except (ValueError, Author.DoesNotExist):
                 author_id = 0
                 aname = ""                  
             books = Book.objects.filter(authors=author_id).distinct().order_by('search_title', '-docdate', 'pk')
@@ -153,7 +159,7 @@ def SearchBooksView(request):
             try:
                 ser_id = int(searchterms)
                 ser = Series.objects.get(id=ser_id).ser
-            except:
+            except (ValueError, Series.DoesNotExist):
                 ser_id = 0
                 ser = ""
             #books = Book.objects.filter(series=ser_id).order_by('search_title','-docdate')
@@ -168,7 +174,7 @@ def SearchBooksView(request):
                 section = Genre.objects.get(id=genre_id).section
                 subsection = Genre.objects.get(id=genre_id).subsection
                 args['breadcrumbs'] = [_('Books'),_('Поиск по жанру'),section,subsection]
-            except:
+            except (ValueError, Genre.DoesNotExist):
                 genre_id = 0
                 args['breadcrumbs'] = [_('Books'),_('Поиск по жанру')]
                 
@@ -206,6 +212,7 @@ def SearchBooksView(request):
             #args['breadcrumbs'] = [_('Books'),mbook.title]
             args['searchobject'] = 'title'
         
+        books = apply_book_filters(books, request.GET, request.user)
         books_for_neighbors = books
         books = books.prefetch_related('authors', 'genres', 'series', 'bseries_set')
 
@@ -215,6 +222,9 @@ def SearchBooksView(request):
         op = OPDS_Paginator(books_count, 0, page_num, config.SOPDS_MAXITEMS, HALF_PAGES_LINKS)
         items = []
         
+        args['reading_choices'] = ReadingState.STATUS_CHOICES
+        args['filter_genres'] = Genre.objects.order_by('subsection', 'pk')
+        args['filters'] = request.GET
         prev_title = ''
         prev_authors_set = set()
         
@@ -254,17 +264,20 @@ def SearchBooksView(request):
                 
         # "вытягиваем" дубликаты книг со следующей страницы и удаляем первый элемент который с предыдущей страницы и "вытягивал" дубликаты с текущей
         if summary_DOUBLES_HIDE:
-            double_flag = True
-            while ((finish+1)<books_count) and double_flag:
-                finish += 1  
-                if books_for_neighbors[finish].title.upper()==prev_title.upper() and {a['id'] for a in books_for_neighbors[finish].authors.values()}==prev_authors_set:
-                    items[-1]['doubles']+=1
-                else:
-                    double_flag = False   
-            
+            if items and finish + 1 < books_count:
+                items[-1]['doubles'] += trailing_duplicate_count(
+                    books_for_neighbors, finish + 1, prev_title, prev_authors_set)
+
             if op.d1_first_pos!=0:     
                 items.pop(0)                                   
               
+        if request.user.is_authenticated:
+            states = {state.book_id: state for state in ReadingState.objects.filter(
+                user=request.user, book_id__in=[item['id'] for item in items])}
+            for item in items:
+                state = states.get(item['id'])
+                item['reading_status'] = state.status if state else ''
+                item['reading_percent'] = round(state.position / 100) if state else 0
         enqueue_visible_ids([item['id'] for item in items])
         args['paginator'] = op.get_data_dict()
         args['searchterms']=searchterms;
