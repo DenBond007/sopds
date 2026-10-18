@@ -112,7 +112,7 @@ def write_kit(destination, archive_path, base, release):
         (ROOT / 'scripts/ops/maintenance.py', 'maintenance.py'),
         (ROOT / 'infra/truenas/settings.example.json', 'settings.example.json'),
         (ROOT / 'infra/docker/init-db.sh', 'init-db.sh'),
-        (ROOT / 'docs/modernization/truenas.md', 'README.md'),
+        (ROOT / 'docs/modernization/truenas-kit.md', 'README.md'),
     ):
         shutil.copyfile(source, destination / name)
     # PostgreSQL must be able to read its file bind mount; it contains no credentials.

@@ -1,331 +1,155 @@
-# SOPDS на TrueNAS SCALE: комплект для установки
-
-Подготовка для **TrueNAS SCALE 24.10+ / Community Edition, x86-64**.
-Основной способ доставки — приватные образы в GitHub Container Registry (GHCR)
-и небольшой комплект конфигурации из GitHub Actions. NAS скачивает образы напрямую.
-Автономный комплект с `images.tar` остаётся запасным вариантом. Ни подготовка,
-ни публикация не устанавливают приложение на NAS. Установка выполняется отдельно после выбора параметров. Для старых SCALE 24.04 и ниже этот сценарий Apps не подходит.
-
-## Что входит
-
-- В registry-комплекте образы отсутствуют: `release.json` содержит точные `@sha256:…`
-  ссылки app/Caddy в GHCR и PostgreSQL в Docker Hub, все для linux/amd64.
-- Только в автономном комплекте: `images.tar` с приложением, Caddy и PostgreSQL.
-- `release.json`: исходный commit, признак локальных изменений, SHA256 uv.lock,
-  идентификаторы образов (index/manifest/config для разных Docker) и SHA256 архива образов.
-- `compose.base.json`, `prepare.py`, `settings.example.json`: подготовка конфигурации.
-- `control.py`, `maintenance.py`, `init-db.sh`: явные команды настройки и сопровождения.
-- `SHA256SUMS`: контрольные суммы всех файлов комплекта до персонализации.
-
-После настройки `prepare.py` создаёт закрытый каталог `deployment/`:
-`bootstrap.yaml`, `app.yaml`, `runtime.env`, `secrets.json`, `settings.json`.
-YAML записан в совместимом JSON-синтаксисе, который принимает Docker Compose.
-Готовые файлы содержат секреты и предназначены только для администратора NAS.
-В комплект до персонализации реальные секреты не входят.
-
-## Получение комплекта из GitHub
-
-Workflow [Publish private TrueNAS images](https://github.com/DenBond007/sopds-images/actions/workflows/publish-truenas.yml)
-запускается вручную в отдельном **приватном** репозитории `DenBond007/sopds-images`.
-В поле `source_ref` задайте commit SHA или тег из исходного `DenBond007/sopds`.
-Workflow разрешает его в точный commit, выполняет полный набор тестов этого commit,
-включая Chromium, затем собирает два образа:
-
-- `ghcr.io/denbond007/sopds-nas-app:sha-<commit>` — web/scanner/annotations/manage;
-- `ghcr.io/denbond007/sopds-nas-caddy:sha-<commit>` — HTTPS.
-
-Оба пакета **private**. Workflow проверяет видимость до/после публикации и отказ
-анонимного чтения. До первой загрузки приложения создаётся пустой scratch seed
-и проверяется фактическая приватность пакета; исходников/слоёв приложения в seed нет.
-Существующий публичный пакет отклоняется. Для публикации используется
-временный `GITHUB_TOKEN` с `packages: write`; отдельный PAT в GitHub Secrets не нужен.
-PostgreSQL берётся из официального публичного образа по закреплённому amd64 digest.
-
-Для следующего выпуска сопровождающий сначала отправляет проверенные изменения
-в исходный репозиторий, затем создаёт и отправляет **новый** тег и запускает сборку:
-
-```sh
-git tag truenas-YYYY.MM.DD.N
-git push origin truenas-YYYY.MM.DD.N
-gh workflow run publish-truenas.yml --repo DenBond007/sopds-images -f source_ref=truenas-YYYY.MM.DD.N
-```
-
-Вместо последней команды можно открыть **sopds-images → Actions → Publish private
-TrueNAS images → Run workflow** и указать тот же тег. Не перемещайте существующие
-теги. Исходный `master` пока legacy; сливать туда модернизацию ради сборки не нужно.
-Публикации по каждому push и автоматического обновления NAS нет.
-
-В `sopds-images` находятся только README и workflow; исходники скачиваются по выбранной
-ревизии из `sopds`. Проверки вызываются через reusable workflow, закреплённый по SHA,
-и используют ту же ревизию, что сборка. После изменения логики публикации синхронизируйте
-`.github/workflows/publish-truenas.yml` с приватным репозиторием. В исходном публичном
-репозитории этот workflow не публикует образы: он ограничен именем `sopds-images`.
-
-В успешном запуске **Actions → Publish private TrueNAS images → Artifacts** скачайте
-`sopds-truenas-ghcr-<commit>`. Распакуйте ZIP артефакта; внутри маленький
-`sopds-truenas-ghcr.tar.gz` и его `.sha256`. Сохраните их у себя: Actions хранит
-артефакт **90 дней**. Комплект хранится в приватном репозитории сборки и
-содержит только общие шаблоны/скрипты и ссылки на образы, без секретов и локальных
-данных. GHCR-образы также должны оставаться приватными.
-
-Переносить архив образов на NAS не нужно. Нужно один раз скопировать небольшой
-комплект в `package_dir` либо скачать и распаковать его там. Эти файлы остаются
-на NAS для init-db, обновлений и резервирования. `release.json` фиксирует фактические
-digest обоих успешных сборок одного commit; изменяемый тег `latest` не используется.
-
-## Автономная сборка на машине разработки
-
-Требуются Python 3.11+, Git, Docker Engine и Compose v2+; исходники приложения
-используют зафиксированные Python 3.13/uv/Django. Сборщик сначала проверяет локальное
-наличие закреплённого PostgreSQL; при отсутствии скачивает тот же amd64 manifest.
-
-```sh
-python3 scripts/truenas/build-kit.py --output .local/sopds-truenas-kit
-```
-
-Каталог назначения должен быть новым. Рядом создаются `.tar.gz` и `.tar.gz.sha256`.
-Архив содержит только выбранные файлы и образы: книги, `.local/`, текущие пароли,
-дампы и ключи действующего стенда не копируются. Образы имеют отдельные теги;
-работающие контейнеры и исходные локальные теги не меняются.
-
-## Параметры перед установкой
-
-Распакуйте комплект, скопируйте `settings.example.json` в `settings.json` и измените:
-
-| Параметр | Значение |
-|---|---|
-| `host` | LAN IPv4 самого NAS; `192.0.2.10` в примере — адрес-заглушка |
-| `port` | Свободный HTTPS-порт, по умолчанию 9444 |
-| `timezone` | Часовой пояс приложения, например Europe/Moscow |
-| `library` | Существующий каталог книг, например `/mnt/tank/books` |
-| `data_dir` | Отдельный dataset приложения, например `/mnt/tank/apps/sopds/data` |
-| `backup_dir` | Закрытый dataset копий, например `/mnt/tank/apps/sopds/backups` |
-| `package_dir` | Путь к распакованному комплекту на NAS, например `/mnt/tank/apps/sopds/package` |
-
-Пути должны быть абсолютными и не пересекаться: библиотека не должна содержать
-копии, БД или сам комплект. Закрепите IP NAS в DHCP. Порт не должен быть занят
-веб-интерфейсом TrueNAS или другим приложением.
-
-```sh
-python3 prepare.py --settings settings.json
-```
-
-Эту команду можно выполнить ещё на рабочей машине: NAS, Docker daemon и наличие
-будущих путей не нужны. Она создаёт три независимых случайных секрета и постоянную
-метку установки. При повторном запуске секреты и метка сохраняются. Смена пароля
-в файле не меняет пароль уже созданной роли PostgreSQL; после первого запуска
-`deployment/secrets.json` нужно сохранять при каждом обновлении.
-
-Проверка синтаксиса без запуска (не выводит секреты):
-
-```sh
-docker compose --env-file deployment/runtime.env -f deployment/bootstrap.yaml --profile tools config --quiet
-docker compose --env-file deployment/runtime.env -f deployment/app.yaml --profile tools config --quiet
-```
-
-## Подготовка хранилища на NAS — при будущей установке
-
-Создайте datasets/каталоги через TrueNAS UI. Оставьте библиотеке её существующие
-права и добавьте UID 10001 чтение файлов и проход по каталогам. Библиотека
-монтируется **read-only**. Для данных приложения используйте отдельные каталоги
-с POSIX-правами; неожиданные унаследованные ACL могут мешать доступу.
-
-| Каталог внутри `data_dir` | Владелец UID:GID | Режим | Назначение |
-|---|---|---|---|
-| `pgdata` | 999:999 | 0700 | PostgreSQL; пустой при новой установке |
-| `static` | 10001:10001 | 0755 | `collectstatic`, чтение Caddy |
-| `caddy-data` | 10001:10001 | 0700 | CA, ключи, сертификаты |
-| `caddy-config` | 10001:10001 | 0700 | Состояние Caddy |
-| `backup-status` | пользователь обслуживания | 0755 | Общедоступная сводка backup, без секретов |
-
-`backup_dir` и `package_dir` — 0700, владелец пользователь обслуживания.
-В контейнерах приложения/Caddy используется **UID 10001**, не стандартный apps/568.
-PostgreSQL bookworm из комплекта использует UID/GID 999. Файл `init-db.sh`
-в комплекте имеет 0444 для чтения внутри PostgreSQL; секретов в нём нет.
-
-Проверьте SHA256 исходного архива и, после распаковки, `sha256sum -c SHA256SUMS`.
-После персонализации сохраните комплект закрытым и перенесите его в `package_dir`.
-Не меняйте путь пакета после генерации без повторного `prepare.py`.
-### Загрузка из приватного GHCR
-
-На GitHub создайте **Personal access token (classic)** с единственным scope
-`read:packages`, от пользователя с доступом к обоим пакетам. Fine-grained PAT
-для этого сценария не используется. Не присылайте токен в чат и не записывайте
-его в YAML, `settings.json` или GitHub Secrets. При необходимости SSO организации
-требуется разрешить доступ токена; текущие пакеты принадлежат личному аккаунту.
-
-В Shell NAS под пользователем с доступом к Docker выберите постоянный закрытый
-каталог credentials **вне комплекта и библиотеки** (замените путь своего пула):
-
-```sh
-export DOCKER_CONFIG=/mnt/tank/apps/sopds/registry-auth
-mkdir -p "$DOCKER_CONFIG"
-chmod 700 "$DOCKER_CONFIG"
-docker login ghcr.io --username DenBond007
-chmod 600 "$DOCKER_CONFIG/config.json"
-python3 control.py pull
-python3 control.py preflight
-```
-
-В поле Password введите PAT. Команда `docker login` не показывает его и не включает
-в историю команд; без credential helper Docker хранит данные входа в восстанавливаемом
-виде. Защитите этот каталог и обновите вход после истечения/отзыва токена.
-`control.py pull` скачивает только три закреплённых образа и проверяет digest и
-linux/amd64; контейнеры не запускаются. Повторный вызов безопасен. Нужен доступ
-к GHCR и Docker Hub по HTTPS. Выполняйте `export DOCKER_CONFIG=…` в новой Shell
-перед загрузкой следующего выпуска.
-
-YAML использует `pull_policy: missing`. После явной загрузки Apps использует локальные
-образы: учётные данные Shell автоматически не считаются учётными данными middleware
-TrueNAS. Если локальные образы удалены, повторите вход и `control.py pull` до запуска
-Apps. Не рассчитывайте на автоматическую авторизованную загрузку из Apps без настройки
-registry credentials, поддерживаемой вашей версией SCALE. Команды обслуживания/cron
-используют уже скачанные образы этого же выпуска.
-
-`preflight` проверяет пути, владельцев и идентичность образов с `release.json`,
-не заменяя проверку ACL библиотеки. Восстановление из registry требует действующего
-доступа и сохранённых версий пакетов; не удаляйте версии GHCR, используемые копиями.
-
-### Загрузка автономного комплекта
-
-Если выбран комплект с `images.tar`, вместо `control.py pull` выполните:
-
-```sh
-docker load --input images.tar
-python3 control.py preflight
-```
-
-Этот вариант использует `pull_policy: never` и не обращается к registry.
-Сохраняйте архив для восстановления после очистки образов или переустановки NAS.
-
-## Первая установка — только для новой пустой БД
-
-1. Откройте **Apps → Discover Apps → ⋮ → Install via YAML**, имя `sopds`.
-   Вставьте содержимое `deployment/bootstrap.yaml`. Запустится только PostgreSQL;
-   служба `manage` находится в неактивном профиле `tools`.
-2. Дождитесь готовности БД. Из `package_dir` выполните:
-
-   ```sh
-   python3 control.py init-new
-   python3 control.py create-admin
-   ```
-
-   `init-new` требует ровно одну работающую службу `db` и **пустую** схему `public`.
-   Он выполняет миграции, загружает жанры, задаёт `/library`, временные каталоги,
-   включает аутентификацию и собирает static. Непустую БД команда не изменяет.
-   При сбое посередине не очищайте БД для повторного запуска: проверьте журналы и
-   завершите только недостающие шаги из `control.py`. `upgrade` выполняет лишь
-   миграции/static и не заменяет незавершённую первоначальную настройку.
-3. В **том же приложении** отредактируйте YAML, заменив его на `deployment/app.yaml`.
-   Начнут работать web, scanner, annotations и Caddy. Сканер читает указанную
-   библиотеку; первый запуск сначала проверьте на небольшой тестовой библиотеке.
-4. Выполните `python3 control.py check`. Проверьте health в Apps, поиск и выдачу книги.
-
-Имя Docker-проекта назначает TrueNAS. `control.py` обнаруживает его по постоянной
-метке установки на контейнере БД, поэтому не зависит от префикса `ix-` и не
-создаёт второй проект. При отсутствии или нескольких подходящих БД он отказывается
-выполнять команды. Управляйте запуском/остановкой приложения через Apps.
-
-При переносе существующей БД сначала сделайте проверенную копию; не выполняйте
-`init-new` и не загружайте fixture жанров поверх пользовательских данных.
-Схема восстановления ниже требует отдельного согласованного шага на NAS.
-
-## HTTPS и проверка
-
-Адрес каталога: `https://<host>:<port>/opds/`, веб-интерфейс: `/web/`.
-Наружу опубликован только HTTPS-порт Caddy; БД и Gunicorn остаются во внутренней сети.
-Caddy использует собственный CA. После первого старта возьмите публичный сертификат
-из `<data_dir>/caddy-data/caddy/pki/authorities/local/root.crt` и установите его в
-доверенные на компьютере/читалке. Приватные ключи остаются в `caddy-data`.
-
-```sh
-curl --cacert root.crt -o /dev/null -sS -w '%{http_code}\n' https://<host>:<port>/opds/
-curl --cacert root.crt --user reader -o /dev/null -sS -w '%{http_code}\n' https://<host>:<port>/opds/
-```
-
-Ожидаются 401 без входа и 200 после ввода пароля обычного читателя. Создайте
-читателя через admin. Проверьте скачивание, сохранение позиции и вход web/admin.
-Проверка доверия CA физической читалкой и автозапуска после перезагрузки NAS
-выполняется при приёмке. Не отключайте проверку TLS для обхода ошибки сертификата.
-
-## Резервное копирование
-
-```sh
-python3 control.py backup --retain 7
-```
-
-Команда временно останавливает web/scanner/annotations/Caddy, снимает дамп БД,
-архив библиотеки и Caddy CA, сохраняет закрытую конфигурацию и идентификаторы образов.
-Каждый дамп восстанавливается во временную БД; число и хеши строк **всех public-таблиц**
-сравниваются с исходной БД. Временная БД удаляется, ранее работавшие службы
-запускаются и при ошибке. Копия помечается завершённой только после проверки.
-Повторные одновременные вызовы блокируются общим lock; удаляются только собственные
-завершённые копии сверх `--retain`.
-
-Длительность простоя зависит от размера библиотеки и проверки БД. Внешняя запись
-в книги через SMB/другие приложения должна быть приостановлена на время копии:
-остановка SOPDS сама по себе такие записи не останавливает.
-`--database-only` исключает книги, но сохраняет CA и конфигурацию; используйте его
-только при отдельном согласованном резервировании библиотеки.
-
-Для расписания создайте **TrueNAS Cron Job** через интерфейс, например ежедневно
-в 03:30 по часовому поясу **самого NAS**. Команда (замените путь):
-
-```sh
-/usr/bin/python3 /mnt/tank/apps/sopds/package/control.py backup --retain 7
-```
-
-Пользователь задания должен иметь доступ к Docker и запись в `backup_dir` и
-`backup-status`. Оставьте уведомления об ошибках включёнными. Не устанавливайте
-старый Ubuntu user-cron/systemd из репозитория на TrueNAS. Скрипт не создаёт
-расписание автоматически. Проверенная сводка появляется в `/web/operations/`.
-
-Dataset копий на том же пуле не защищает от потери пула: настройте отдельную
-репликацию/копию этих закрытых snapshots на другой носитель. Защищайте их как пароли:
-они содержат конфигурацию, БД и приватный CA.
-
-## Обновление и восстановление
-
-Сначала скачайте новый комплект и новые образы (`control.py pull` из распакованного
-нового registry-комплекта с тем же `DOCKER_CONFIG`; конфигурация для этой команды
-не требуется). Это можно сделать до остановки приложения. Затем выполните
-проверенный backup и сохраните старый комплект и используемые им версии образов.
-Переведите существующее приложение в его старый `bootstrap.yaml`; убедитесь, что
-работает только БД. Перенесите новый комплект в тот же `package_dir`, **сохранив
-старые `deployment/secrets.json` и настройки**. Для автономного варианта импортируйте новые образы; повторите
-`prepare.py`, проверьте конфигурацию и `preflight`. Примените новый bootstrap YAML,
-выполните `control.py upgrade`, затем примените новый `app.yaml` и проверьте HTTPS.
-Пароли и каталог `pgdata` не меняются. Обновление major-версии PostgreSQL этим
-сценарием не предусмотрено; потребуется отдельная миграция.
-
-Для восстановления используйте **новые пустые datasets** и сохранённые образы.
-На том же NAS сначала остановите исходное приложение через Apps: одновременно
-работающие копии с одной меткой установки намеренно блокируются `control.py`.
-Проверьте хеши файлов по `manifest.json`. Верните конфигурацию из снимка:
-`runtime.env`, `extra-secrets.json` → `deployment/secrets.json`,
-`extra-settings.json` → файл настроек; возьмите соответствующий `release.json` и
-старый комплект. Скорректируйте пути/host и повторите `prepare.py`, сохранив секреты.
-Создайте bootstrap-приложение с пустой БД, не запускайте `init-new`.
-
-В его контейнере `db` восстановите `database.dump` командой
-`pg_restore -U postgres -d sopds --exit-on-error --no-owner --no-privileges`;
-передайте дамп через stdin (`docker exec -i`), имя контейнера возьмите из Apps.
-Восстанавливайте в пустую БД; не используйте `--clean` на рабочей БД.
-Распакуйте `library.tar` в новую библиотеку, `caddy-data.tar` в новый `caddy-data`,
-верните владельца Caddy 10001 и права 0700. Не запускайте Caddy до восстановления CA.
-Примените `control.py upgrade` для миграций/static, затем полный YAML и проверки.
-Исходные datasets оставьте до успешной приёмки. Откат схемы БД нельзя заменить
-простым возвратом старого Docker-тега: используйте соответствующий снимок.
-
-## Основания и границы проверки
-
-- [GitHub: Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
-- [GitHub: Package permissions](https://docs.github.com/en/packages/learn-github-packages/about-permissions-for-github-packages)
-- [TrueNAS: Installing Custom Apps](https://apps.truenas.com/managing-apps/installing-custom-apps/)
-- [Docker: Compose config](https://docs.docker.com/reference/cli/docker/compose/config/)
-- [Docker: Profiles](https://docs.docker.com/reference/compose-file/profiles/)
-
-Локальная проверка включает генерацию YAML, пути/секреты, отказ повторной
-инициализации, выбор проекта, сборку/экспорт образов и тесты приложения.
-Это не подтверждает установку на NAS: точную версию SCALE, datasets/ACL,
-свободный порт, доверие CA и запуск после reboot нужно проверить при развёртывании.
+# SOPDS on TrueNAS SCALE: one YAML
+
+Target: **TrueNAS SCALE 24.10+ / Community Edition, linux/amd64** with Docker Apps.
+Use [the complete release YAML](../../infra/truenas/compose.yaml). Fill in its clearly
+marked `x-sopds-settings` block and paste the **whole file** into **Apps → Discover
+Apps → ⋮ → Install via YAML**, application name `sopds`. TrueNAS supplies the
+Compose project name. No checkout, archive, external `.env`, host initialization
+script or Python command is needed on the NAS.
+
+Preparation and publication do not deploy anything. This release has not been
+installed on a real NAS. The existing local stack and its data are separate.
+The [offline/configuration kit](truenas-kit.md) remains supported as an alternative;
+its `prepare.py`/`control.py` instructions apply only to that kit.
+
+## Prepare storage and permissions
+
+Choose an Apps pool in TrueNAS first. Reserve the NAS IPv4 address and an unused
+HTTPS port (example: 9444); it must not conflict with the NAS management UI.
+Create **all** host directories before installation. Missing paths are rejected;
+the YAML never creates/chowns datasets or modifies books.
+
+| YAML setting | Example | Required owner/access |
+|---|---|---|
+| `books` | `/mnt/tank/books` | Keep existing ownership; UID 10001 needs read on files and read/traverse on every directory, including parents |
+| `pgdata` | `/mnt/tank/apps/sopds/pgdata` | 999:999, 0700; empty for first installation |
+| `static` | `/mnt/tank/apps/sopds/static` | 10001:10001, 0755; init writes, other services read |
+| `tls_data` | `/mnt/tank/apps/sopds/caddy-data` | 10001:10001, 0700; permanent CA and TLS private keys |
+| `tls_config` | `/mnt/tank/apps/sopds/caddy-config` | 10001:10001, 0700 |
+
+Use separate datasets/directories for books and application state. Data paths
+must be distinct and outside the books tree. Prefer POSIX permissions for the
+private application datasets. Check effective ACLs and parent traversal in the
+TrueNAS permission editor: an inherited SMB ACL can prevent access despite the
+numeric owner/mode. Do not make the library writable or apply recursive ownership
+changes to existing books. Dataset encryption must be unlocked before Apps start.
+
+The library is mounted read-only everywhere. PostgreSQL, application configuration,
+accounts, catalog and reading positions persist in `pgdata`; static files and TLS
+state have their own persistent binds. All runtime processes use non-root UIDs,
+drop capabilities and forbid privilege escalation; app/Caddy filesystems are read-only.
+
+## Authenticate private images in TrueNAS
+
+The two private packages are `ghcr.io/denbond007/sopds-nas-app` and
+`ghcr.io/denbond007/sopds-nas-caddy`. Use a **GitHub PAT classic with `read:packages`**,
+owned by an account that can read both packages; enable organization SSO if required.
+Keep this token in TrueNAS registry settings, separate from application passwords.
+Do not paste it into this YAML or commit it. See [GitHub's GHCR authentication guide](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry).
+
+**SCALE 25.04 and later:** **Apps → Configuration → Sign-in to a Docker registry →
+Add Registry → Other Registry**. URI `ghcr.io`, display name `SOPDS GHCR`, username
+the GitHub account, password the PAT. Save and confirm success. These are saved
+Apps credentials. [TrueNAS 25.04 registry UI](https://www.truenas.com/docs/scale/25.04/scaleuireference/apps/#docker-registries).
+The [25.04 middleware](https://github.com/truenas/middleware/blob/TS-25.04.2.6/src/middlewared/middlewared/plugins/apps/compose_utils.py)
+explicitly runs Compose using `/etc/docker` configuration; a login in an SSH
+user's default Docker config is a different context.
+
+**SCALE 24.10:** the supported UI is **Apps → Configuration → Manage Container
+Images → Pull Image**, which accepts a username/password for each pull, rather
+than the newer saved-registry screen. Pre-pull **each exact private release image**
+from the YAML using that dialog and the PAT. Put the complete `ghcr.io/…@sha256:…`
+reference in **Image Name** and **clear Image Tag** (its default is `latest`). The
+[24.10 form](https://github.com/truenas/webui/blob/TS-24.10.2.2/src/app/pages/apps/components/docker-images/pull-image-form/pull-image-form.component.ts)
+sends that full reference unchanged when the tag is empty. Alternatively use the
+release's exact `sha-<source-commit>` tag, which identifies the same amd64 manifest.
+The [24.10 UI reference](https://www.truenas.com/docs/scale/24.10/scaleuireference/apps/#pull-image)
+and [pull implementation](https://github.com/truenas/middleware/blob/TS-24.10.2.2/src/middlewared/middlewared/plugins/apps_images/images.py)
+confirm per-request authenticated downloads. The YAML uses `pull_policy: missing`,
+so these cached immutable images can start without assuming persistent login.
+Re-pull new release images before every update, and after image-cache deletion.
+Avoid a force-pull operation unless Apps has credentials for that request.
+
+A shell `docker login` alone is **not** the documented Apps authentication method.
+Actual registry login/pull in your NAS UI remains an acceptance check. If private
+pulls fail, fix registry credentials/access before installing; keep packages private.
+
+## Fill in the YAML and install
+
+In `x-sopds-settings`, replace the example IP, port, timezone, all five paths,
+three infrastructure secrets and initial administrator credentials. Generate
+**three independent random hex secrets of at least 64 characters** in a password
+manager for Django, PostgreSQL administrator and the application database role.
+Use a strong initial admin password of at least 16 characters and a valid email.
+The initializer rejects credential placeholders and weak admin passwords.
+
+Keep YAML strings quoted. Compose processes `$` even inside single quotes: use
+`$$` for each literal dollar in a password. Hex secrets avoid this issue. Keep a
+private backup of the personalized YAML; it and the TrueNAS configuration contain
+credentials. No real credentials are included in Git or built images.
+
+Paste and save the complete YAML. The automatic sequence is:
+
+1. PostgreSQL initializes its persistent directory and becomes healthy.
+2. The one-shot `init` service creates the least-privileged `sopds` database role
+   only if absent, applies migrations, atomically seeds a **new** library's genres,
+   container paths and authenticated defaults, and creates the administrator.
+3. `init` collects static files and records completion for the pinned app release.
+4. Web, scanner and annotations start after `init` exits successfully. Caddy also
+   waits for healthy web. Only Caddy's HTTPS port is published.
+
+`init` normally shows **Exited (0)**, while db/web/Caddy become healthy.
+A failed init exits nonzero and blocks dependent services. Inspect its Apps logs,
+correct the settings/permissions and stop/start the same app to retry. Never delete
+`pgdata` or initialization checkpoints to fix an error. A durable database checkpoint
+precedes migrations; fixture/default/admin creation is one transaction. SIGKILL or
+failed static collection can be retried. Existing passwords/settings/catalog rows
+are preserved; existing databases without a checkpoint receive migrations/static,
+**no fixtures or automatic account changes**. Runtime readiness guards also cover
+Docker daemon restarts, which do not themselves enforce Compose dependencies.
+
+Open `https://<nas_ip>:<https_port>/web/` and `/admin/`; the OPDS URL is `/opds/`.
+Caddy issues certificates with its private CA. Copy the **public** certificate
+`<tls_data>/caddy/pki/authorities/local/root.crt` through the NAS file interface to
+trusted clients/readers and trust that CA. Keep CA private keys on the protected
+dataset. Verify 401 without credentials, 200 with credentials, web login, static
+assets, search and download; create an ordinary reader in admin. Trust verification
+must stay enabled. Check physical-reader compatibility and NAS reboot separately.
+
+## Update, backup and recovery
+
+Before an update, **stop the app in Apps** and take a consistent backup/snapshot
+of `pgdata`, static and both TLS directories, plus the personalized YAML and books
+(or their independently verified backup). Pause external writers to books during
+its snapshot. Replicate backups off the pool. The bare YAML does not install a
+backup schedule; configure snapshot/replication tasks in TrueNAS separately.
+
+Authenticate/pre-pull the new private release images as above. Edit the **same**
+app with the new complete release YAML, copying your settings block unchanged.
+Keep both database passwords and Django secret, paths, port and timezone; change
+admin passwords through the application UI. YAML admin values apply only to a new
+library and never reset a previously created account. Preserve all image pins and
+the generated readiness ID together. Start/save; migrations and static collection
+run automatically before services. Check init exit status, health and HTTPS.
+
+If an update fails, leave the app stopped while investigating. Retrying the same
+release is safe. Schema rollback requires the matching backup and old YAML/images;
+simply selecting an older tag does not undo a database migration. Restore to new
+separate datasets with the original owners, preserving the matching database,
+TLS CA and secrets. Do not overwrite the source datasets before acceptance. An
+existing imported database must already have valid container library/temp/log
+settings and its original `sopds` role/password; init does not rewrite them.
+PostgreSQL major-version upgrades require a separate migration.
+
+## Release and verification
+
+Maintainers publish the tested source commit from `codex/library-operations` via
+[the private publisher](https://github.com/DenBond007/sopds-images/actions/workflows/publish-truenas.yml).
+Legacy `master` is not used. Publication still checks package privacy **before**
+application layers, checks privacy again and rejects anonymous access afterward.
+The private workflow emits `sopds-truenas.yaml` directly in its artifact alongside
+the optional existing kit. The renderer couples the app digest and readiness ID.
+
+[Verification results](truenas-validation.md) distinguish automated synthetic tests
+from NAS acceptance. No NAS deployment, real library migration, NAS ACL validation,
+private pull through the NAS UI, physical-reader CA check or NAS reboot is claimed.

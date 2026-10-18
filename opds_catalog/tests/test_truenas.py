@@ -348,3 +348,60 @@ class RegistryPrivacyTests(TestCase):
         with patch.object(registry, 'check_package', return_value=True), patch.object(registry.subprocess, 'run') as build:
             registry.initialize_private_package('owner', 'app', 'test-token')
             build.assert_not_called()
+
+
+class StandaloneComposeTests(TestCase):
+    def test_renderer_rejects_mutable_or_wrong_packages_and_couples_readiness_to_digest(self):
+        renderer = load('truenas_renderer', 'scripts/truenas/render-compose.py')
+        app = 'ghcr.io/denbond007/sopds-nas-app@sha256:' + 'a' * 64
+        caddy = 'ghcr.io/denbond007/sopds-nas-caddy@sha256:' + 'b' * 64
+        text = renderer.render(app, caddy)
+        self.assertNotIn('__APP_', text)
+        self.assertNotIn('__CADDY_', text)
+        self.assertIn(app, text)
+        self.assertIn(caddy, text)
+        self.assertIn('SOPDS_RELEASE: sha256:' + 'a' * 64, text)
+        for invalid in (app.split('@')[0] + ':latest', app.replace('denbond007', 'other'), caddy):
+            with self.assertRaises(ValueError):
+                renderer.render(invalid, caddy)
+
+    def test_compose_has_only_self_contained_mounts_and_fail_closed_dependencies(self):
+        import subprocess
+        renderer = load('truenas_renderer_config', 'scripts/truenas/render-compose.py')
+        text = renderer.render('ghcr.io/denbond007/sopds-nas-app@sha256:' + 'a' * 64,
+                               'ghcr.io/denbond007/sopds-nas-caddy@sha256:' + 'b' * 64)
+        result = subprocess.run(['docker', 'compose', '-f', '-', 'config', '--format', 'json'],
+                                input=text, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = json.loads(result.stdout)
+        services = config['services']
+        self.assertEqual(set(services), {'db', 'init', 'web', 'scanner', 'annotations', 'caddy'})
+        for name, service in services.items():
+            self.assertIn('@sha256:', service['image'])
+            self.assertEqual(service['platform'], 'linux/amd64')
+            self.assertEqual(service['pull_policy'], 'missing')
+            self.assertNotIn('build', service)
+            self.assertNotIn('env_file', service)
+            self.assertNotIn('profiles', service)
+            for mount in service['volumes']:
+                self.assertEqual(mount['type'], 'bind')
+                self.assertTrue(mount['source'].startswith('/mnt/'))
+                self.assertFalse(mount['bind']['create_host_path'])
+            if name != 'db':
+                self.assertEqual(service['user'], '10001:10001')
+                self.assertTrue(service['read_only'])
+        for name in ('web', 'scanner', 'annotations', 'caddy'):
+            self.assertEqual(services[name]['depends_on']['init']['condition'], 'service_completed_successfully')
+            self.assertNotIn('POSTGRES_PASSWORD', services[name]['environment'])
+            self.assertNotIn('SOPDS_ADMIN_PASSWORD', services[name]['environment'])
+            self.assertEqual(services[name]['environment']['SOPDS_REQUIRE_INITIALIZED'], '1')
+        self.assertEqual(services['init']['depends_on']['db']['condition'], 'service_healthy')
+        self.assertEqual(services['init']['restart'], 'no')
+        self.assertEqual(services['init']['environment']['SOPDS_REQUIRE_INITIALIZED'], '0')
+        for name in ('init', 'web', 'scanner', 'annotations'):
+            books = next(m for m in services[name]['volumes'] if m['target'] == '/library')
+            self.assertTrue(books['read_only'])
+        self.assertEqual(services['caddy']['depends_on']['web']['condition'], 'service_healthy')
+        self.assertNotIn('ports', services['db'])
+        self.assertNotIn('ports', services['web'])
+        self.assertTrue(config['networks']['backend']['internal'])

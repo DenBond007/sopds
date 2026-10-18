@@ -6,4 +6,7 @@ RUN setcap -r /usr/bin/caddy \
     && chmod 0700 /data /config /data/caddy /config/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY caddy-healthcheck.sh /usr/local/bin/sopds-caddy-healthcheck
+COPY caddy-entrypoint.sh /usr/local/bin/sopds-caddy-entrypoint
 USER 10001:10001
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/sopds-caddy-entrypoint"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

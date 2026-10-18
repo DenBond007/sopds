@@ -2,3 +2,4 @@
 !Caddy.Dockerfile
 !Caddyfile
 !caddy-healthcheck.sh
+!caddy-entrypoint.sh

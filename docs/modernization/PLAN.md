@@ -372,3 +372,33 @@ success: 224/224 теста (88.071 с), private до/после push, anonymous
 строго по известным версиям; одноразовый cleanup workflow удалён из текущей ветки.
 Исходники остаются в публичном sopds; будущие выпуски — Run workflow в private
 sopds-images с выбранным source_ref. Развёртывание на NAS не выполнялось.
+
+
+## M11 — один самодостаточный YAML для TrueNAS (2026-10-18)
+
+Пользователь разрешил реализацию, проверки и публикацию обновлённых образов через
+существующий приватный DenBond007/sopds-images; deployment на NAS запрещён.
+
+| ID | Задача и критерий | Статус |
+|---|---|---|
+| M11.1 | Init в image: PostgreSQL healthy → миграции → атомарная первичная настройка/администратор → static; повторы сохраняют данные и настройки | done |
+| M11.2 | Один YAML с pinned images, явными настройками, RO books и init dependency; подтверждённый registry auth по версиям SCALE; offline kit сохранён | in_progress |
+| M11.3 | Изолированные synthetic first/repeat/failure проверки, полный обязательный набор, приватная публикация, конечный YAML и документация | in_progress |
+
+Новый формат нужен, чтобы на NAS не требовались архив/checkout/.env/host script/Python.
+Готовность: опубликованные digest в конечном YAML и проверенная локально/CI последовательность;
+NAS ACL, registry UI, reboot и физическая читалка остаются внешней приёмкой.
+
+M11 промежуточно: standalone template/renderer и guarded app/Caddy реализованы.
+TrueNAS 24.10 authenticated Pull Image (полный digest, пустой tag) и 25.04+ saved
+registry проверены по официальной документации/UI/middleware. Локальный synthetic
+first/repeat/credential/mount/HTTPS/RO/UID smoke прошёл; полный набор и SIGKILL pending.
+Отдельный `.local/sopds-truenas-m11-offline.tar.gz` собран без запуска текущих служб.
+
+M11 local: 236/236 за 95.633 с с настоящим Chromium, first/repeat/failure/
+SIGKILL → rollback → retry, HTTPS/401/200/CA, UID/RO прошли. Сохранены account
+password/email, settings, custom genres, book IDs, shelves, reading positions.
+Offline archive/file SHA256, image/platform и оба kit YAML проверены; uv frozen/offline,
+npm ci/offline/CSS, source/vendor/schema/actionlint/diff прошли. Следующий шаг —
+публикация точного source SHA через private publisher с прежними privacy gates,
+CI synthetic smoke и фиксация фактических digest в конечном YAML.

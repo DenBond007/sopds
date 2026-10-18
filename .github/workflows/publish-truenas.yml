@@ -94,11 +94,23 @@ jobs:
             --output .local/sopds-truenas-ghcr
           python3 .local/sopds-truenas-ghcr/control.py pull
           (cd .local/sopds-truenas-ghcr && sha256sum --check SHA256SUMS)
-      - name: Save the configuration kit (no secrets or image layers)
+      - name: Render and test the standalone YAML with synthetic data only
+        run: |
+          app_digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/app-image.json")
+          caddy_digest=$(jq -er '."containerimage.digest"' "$RUNNER_TEMP/caddy-image.json")
+          python3 scripts/truenas/render-compose.py \
+            --app-image "$APP_IMAGE@$app_digest" --caddy-image "$CADDY_IMAGE@$caddy_digest" \
+            --output .local/sopds-truenas.yaml
+          docker compose -f .local/sopds-truenas.yaml config --quiet
+          python3 scripts/truenas/smoke-compose.py \
+            --app-image "$APP_IMAGE@$app_digest" --caddy-image "$CADDY_IMAGE@$caddy_digest" \
+            --logs "$RUNNER_TEMP/sopds-compose-smoke"
+      - name: Save the YAML and configuration kit (no secrets or image layers)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sopds-truenas-ghcr-${{ needs.source.outputs.commit }}
           path: |
+            .local/sopds-truenas.yaml
             .local/sopds-truenas-ghcr.tar.gz
             .local/sopds-truenas-ghcr.tar.gz.sha256
           include-hidden-files: true

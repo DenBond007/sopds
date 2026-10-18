@@ -1,6 +1,6 @@
 # Текущее состояние
 
-- Задача: M10 завершена — приватные GHCR-образы опубликованы, малый комплект проверен; развёртывание на NAS явно исключено.
+- Задача: M11 in_progress — один самодостаточный YAML для Apps → Install via YAML; повторяемый init, приватный выпуск и изолированные проверки. Развёртывание на NAS запрещено.
 - Ветка: `codex/library-operations`, исходный HEAD `b21543e`; код и локальные проверки сохранены в `22ee7b6`; опубликована в DenBond007/sopds по явному согласию пользователя; CI для 4a335db success.
 - M08.1–M08.5 done; M08.6 done: CI 39117577380 для исправленного 4a335db success, 203/203 за 82.696 с с Chromium. Повторный 39117210902 выявил race /proc в тесте; точный catch ESRCH/ENOENT проверен 20/20 адресно. M06.3 также закрыта.
 - Стек: Python 3.13 / Django 5.2 / PostgreSQL 17, uv-lock; Django/OPDS/ID и прежние полки сохранены.
@@ -43,4 +43,6 @@
 - Первый выпуск из public repo оказался public; только его две собственные версии удалены (cleanup39143277809), anonymous403 подтверждён. Затем пустой seed тоже былpublic — runtime не передавался, seed удалён (cleanup39143757782). Причина default не установлена; private publisher решает задачу, проверки не ослаблены.
 - Workflow в sopds-images совпадает с .github/workflows/publish-truenas.yml; reusable CI закреплён по80be05e и тестирует тот же source commit. Новые пакеты проверяются на пустом scratch seed до загрузки runtime.
 - Последующие выпуски: отправить source commit/tag, запустить private workflow с source_ref; артефакты хранятся90дней, локальную копию сохранять. Нет автоматического обновления NAS.
-- Следующий шаг: только по отдельному поручению установить на NAS по docs/modernization/truenas.md (версия/IP/пути/ACL/PAT). Сейчас ничего на NAS не развёрнуто; подготовка и приватная публикация завершены.
+- M11: init/checkpoint и release-readiness в app/Caddy реализованы; один YAML-шаблон и renderer, документирован подтверждённый registry UI для 24.10/25.04+.
+- M11 local done: 236/236 за95.633с с Chrome; first/repeat/credentials/mount/SIGKILL→rollback→retry, TLS/auth/UID/RO и сохранность account/settings/genre/ID/shelf/position/CA. Offline-kit SHA/image/platform/оба YAML проверены; uv/npm/CSS/source/vendor/schema/actionlint OK.
+- Следующий шаг: опубликовать проверенный source SHA в codex/library-operations и через private sopds-images; дождаться CI/anonymous-denial и закрепить фактические digest в конечном YAML. NAS deployment запрещён.
